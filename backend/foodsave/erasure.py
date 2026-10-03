@@ -36,6 +36,8 @@ class Policy:
 
 CHECKLIST = (
     'sessions and credentials; account remains disabled',
+    'email verification timestamp/challenges; expired email quota identifiers only',
+    'active quota identifiers require manual follow-up after expiry; shared costs never reset',
     'own favorites, reviews and idempotency responses',
     'vendor names, photo URLs, coordinates and reservation snapshots',
     'retained business rows remain pseudonymous until configured purge date',
@@ -58,8 +60,8 @@ class Eraser:
         with self.database.connect() as c:
             if one(c, 'SELECT DB_NAME() AS name')['name'] != 'foodsave':
                 raise ValueError('Dedicated foodsave database required')
-            if not one(c, "SELECT version FROM dbo.schema_migrations WHERE version='011_mark_notification_read.sql'"):
-                raise ValueError('Owner migrations through 011 required')
+            if not one(c, "SELECT version FROM dbo.schema_migrations WHERE version='012_account_lifecycle.sql'"):
+                raise ValueError('Owner migrations through 012 required')
             pending = rows(c, "SELECT TOP (:limit) id FROM dbo.deletion_requests WHERE state='requested' AND approved_for_erasure=1 AND ((pii_cleared_at IS NULL AND requested_at<=DATEADD(day,-:grace,SYSUTCDATETIME())) OR (pii_cleared_at IS NOT NULL AND purge_after<=SYSUTCDATETIME())) ORDER BY requested_at,id", limit=limit, grace=self.policy.grace_days)
         results = []
         for item in pending:
@@ -70,6 +72,7 @@ class Eraser:
                 results.append({'request_id': item['id'], 'state': 'failed_retryable'})
         if apply:
             with self.database.begin() as c:
+                execute(c, 'DELETE TOP (100) FROM dbo.account_challenges WHERE expires_at<=SYSUTCDATETIME()')
                 execute(c, 'DELETE TOP (100) FROM dbo.erasure_receipts WHERE expires_at<=SYSUTCDATETIME()')
                 execute(c, 'DELETE TOP (100) FROM dbo.notifications WHERE expires_at<=SYSUTCDATETIME()')
                 execute(c, 'DELETE TOP (100) FROM dbo.reservation_terminals WHERE expires_at<=SYSUTCDATETIME()')
@@ -92,8 +95,14 @@ class Eraser:
             if not request['approved_for_erasure']:
                 return {'request_id': request_id, 'state': 'pending_operator_review'}
             u = request['user_id']
+            if apply:
+                before=one(c,'SELECT id,email,active FROM dbo.users WHERE id=:u',u=u)
+                if before:
+                    execute(c,"DECLARE @r int; EXEC @r=sp_getapplock @Resource=:resource,@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=5000; IF @r<0 THROW 51000,'Account erasure lock unavailable',1",resource='foodsave:account:'+digest('account-email:'+before['email'].casefold()))
             hint = ' WITH(UPDLOCK,HOLDLOCK)' if apply else ''
             user = one(c, 'SELECT id,email,active FROM dbo.users' + hint + ' WHERE id=:u', u=u)
+            if apply and before and user and before['email']!=user['email']:
+                raise ValueError('Account changed; retry review')
             if not user or user['active']:
                 raise ValueError('Account must already be disabled')
             now = one(c, 'SELECT SYSUTCDATETIME() AS now')['now']
@@ -113,19 +122,44 @@ class Eraser:
             if phase == 'clear_pii':
                 self.clear_pii(c, u, user['email'])
                 execute(c, 'UPDATE dbo.deletion_requests SET pii_cleared_at=:now,purge_after=:purge,policy_version=:v WHERE id=:r', now=now, purge=now+timedelta(days=self.policy.business_retention_days), v=self.policy.version, r=request_id)
-                return {'request_id': request_id, 'state': 'pii_cleared_business_retained'}
+                return {'request_id': request_id, 'state': 'pii_cleared_business_retained', 'active_auth_counters_not_reset': True}
             self.purge(c, u)
             execute(c, 'INSERT INTO dbo.erasure_receipts(request_id,policy_version,completed_at,expires_at) VALUES(:r,:v,:now,:expires)', r=request_id, v=self.policy.version, now=now, expires=now+timedelta(days=self.policy.receipt_days))
             return {'request_id': request_id, 'state': 'sql_completed', 'external_erasure_verified': False}
 
+    def cleanup_auth_rate_identifiers(self,email,*,apply=False):
+        from .schemas import EmailRequest
+        email=EmailRequest(email=email).email
+        if apply and not self.policy.enabled:
+            raise ValueError('Execution disabled')
+        with (self.database.begin() if apply else self.database.connect()) as c:
+            if one(c,'SELECT DB_NAME() AS name')['name']!='foodsave':
+                raise ValueError('Dedicated foodsave database required')
+            if not one(c,"SELECT version FROM dbo.schema_migrations WHERE version='012_account_lifecycle.sql'"):
+                raise ValueError('Owner migrations through012 required')
+            if apply:self.clear_expired_email_counters(c,email)
+        return {'state':'expired_email_counters_checked' if apply else 'dry_run',
+                'active_counters_not_reset':True,'global_counters_untouched':True}
+
+    def clear_expired_email_counters(self,c,email):
+        # Exact email buckets only, after their existing900-second windows end.
+        # Never delete global/peer/user budgets or the durable once-only mail probe.
+        for action in ('login:email','auth:mail:email','auth:finish:email','deletion-public-account'):
+            execute(c,'DELETE FROM dbo.rate_limits WHERE bucket=:b AND window_start<=DATEADD(second,-900,SYSUTCDATETIME())',b=digest(action+':'+email.casefold()))
+
+    def clear_auth(self,c,u,email):
+        execute(c,'DELETE FROM dbo.account_challenges WHERE email_key=:e',e=digest('account-email:'+email.casefold()))
+        execute(c,'UPDATE dbo.users SET email_verified_at=NULL WHERE id=:u',u=u)
+        self.clear_expired_email_counters(c,email)
+
     def clear_pii(self, c, u, email):
+        self.clear_auth(c,u,email)
         execute(c, "UPDATE dbo.users SET email=:email,password_hash='erased',active=0 WHERE id=:u", email='erased-'+u+'@example.invalid', u=u)
         for table in ('sessions', 'favorites', 'reviews', 'request_results', 'notifications', 'reservation_terminals'):
             execute(c, f'DELETE FROM dbo.{table} WHERE user_id=:u', u=u)
         execute(c, "UPDATE dbo.notifications SET body=N'店家相關通知；店家識別資料已移除。',related_vendor_id=NULL,event_key='vendor-erased:'+id WHERE related_vendor_id=:u", u=u)
         execute(c, 'UPDATE dbo.reservation_terminals SET vendor_id=NULL WHERE vendor_id=:u', u=u)
         execute(c, 'DELETE FROM dbo.favorites WHERE vendor_id=:u', u=u)
-        execute(c, 'DELETE FROM dbo.rate_limits WHERE bucket=:b', b=digest('deletion-public-account:'+email))
         execute(c, "UPDATE dbo.reservations SET pickup_code_hash=REPLICATE('0',64) WHERE user_id=:u", u=u)
         # Keep other customers' numeric transaction evidence but scrub vendor text.
         execute(c, "UPDATE r SET snapshot=JSON_MODIFY(JSON_MODIFY(r.snapshot,'$.name',N'已刪除商品'),'$.photo_url','') FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id JOIN dbo.stores s ON s.id=p.store_id WHERE s.owner_id=:u", u=u)

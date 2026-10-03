@@ -31,7 +31,7 @@ class Database:
 
     def read(self, sql, **params):
         if 'DB_NAME' in sql: return {'name': self.name}
-        if 'schema_migrations' in sql: return {'version': '004_erasure.sql'}
+        if 'schema_migrations' in sql: return {'version': '012_account_lifecycle.sql'}
         if 'erasure_receipts' in sql: return {'request_id': 'request-fixture'} if self.data['receipt'] else None
         if 'deletion_requests' in sql: return self.data['request']
         if 'dbo.users' in sql: return {'id': 'user-fixture', 'email': 'fixture@example.test', 'active': self.active}
@@ -106,8 +106,8 @@ def test_atomic_phase_recovers_after_failure(context, failure):
     assert worker.run(apply=True)[0]['state'] == 'failed_retryable'
     # run also performs bounded expired-receipt housekeeping after the rollback.
     assert db.data['request'] == before['request'] and db.data['receipt'] == before['receipt']
-    assert db.data['writes'][:-3] == before['writes']
-    assert all('DELETE TOP (100)' in sql and 'expires_at<=' in sql for sql in db.data['writes'][-3:])
+    assert db.data['writes'][:-4] == before['writes']
+    assert all('DELETE TOP (100)' in sql and 'expires_at<=' in sql for sql in db.data['writes'][-4:])
     db.fail_on = None
     assert worker.process('request-fixture', apply=True)['state'] in ('sql_completed', 'pii_cleared_business_retained')
 
@@ -139,3 +139,46 @@ def test_request_needs_individual_operator_review(context):
     db.data['request']['approved_for_erasure'] = False
     assert worker.process('request-fixture', apply=True)['state'] == 'pending_operator_review'
     assert all('sp_getapplock' in s for s in db.data['writes'])
+
+
+def test_auth012_cleanup_exact_email_only_and_no_active_cost_reset(context,monkeypatch):
+    db,worker=context;calls=[]
+    monkeypatch.setattr(m,'execute',lambda c,sql,**params:calls.append((sql,params)))
+    worker.clear_auth(db,'user-fixture','Fixture@Example.Test')
+    assert calls[0]==('DELETE FROM dbo.account_challenges WHERE email_key=:e',{'e':m.digest('account-email:fixture@example.test')})
+    assert calls[1]==('UPDATE dbo.users SET email_verified_at=NULL WHERE id=:u',{'u':'user-fixture'})
+    counters=calls[2:]
+    assert len(counters)==4
+    expected={m.digest(a+':fixture@example.test') for a in ('login:email','auth:mail:email','auth:finish:email','deletion-public-account')}
+    assert {p['b'] for _,p in counters}==expected
+    assert all('window_start<=DATEADD(second,-900,SYSUTCDATETIME())' in sql for sql,_ in counters)
+    for action,client in [('auth:password:global','all'),('auth:mail:global:hour','all'),('auth:mail:probe:once:v1','fixture@example.test'),('auth:change','user-fixture')]:
+        assert m.digest(action+':'+client) not in expected
+
+
+def test_auth_cleanup_failure_rolls_back_phase(context):
+    db,worker=context;before=deepcopy(db.data);db.fail_on='DELETE FROM dbo.account_challenges'
+    with pytest.raises(RuntimeError):worker.process('request-fixture',apply=True)
+    assert db.data==before
+
+
+def test_012_required_before_owner_run(context,monkeypatch):
+    db,worker=context;original=db.read
+    monkeypatch.setattr(db,'read',lambda sql,**p:None if 'schema_migrations' in sql else original(sql,**p))
+    with pytest.raises(ValueError,match='012'):worker.run()
+    assert not db.data['writes']
+
+
+def test_expired_counter_followup_dry_run_and_apply_are_narrow(context):
+    db,worker=context
+    assert worker.cleanup_auth_rate_identifiers('fixture@example.test')['state']=='dry_run'
+    assert not db.data['writes']
+    result=worker.cleanup_auth_rate_identifiers('fixture@example.test',apply=True)
+    assert result['active_counters_not_reset'] and result['global_counters_untouched']
+    assert len(db.data['writes'])==4
+    assert all(sql.startswith('DELETE FROM dbo.rate_limits WHERE bucket=:b AND window_start<=') for sql in db.data['writes'])
+
+
+def test_disabled_counter_followup_cannot_connect():
+    worker=m.Eraser(None,m.Policy('fixture',0,0,1,'fixture-only'))
+    with pytest.raises(ValueError,match='disabled'):worker.cleanup_auth_rate_identifiers('fixture@example.test',apply=True)
