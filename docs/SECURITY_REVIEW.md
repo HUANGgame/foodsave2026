@@ -45,3 +45,5 @@
 本輪新增交易替身測試：預設關閉、逐案審查、dry-run零寫入、有限期限、政策版本、等待訂單阻擋、兩階段、FK順序、重試與失敗回滾。GPS拒絕／不可用／逾時提示及評論返回有browser mock。完整個資抹除仍需外部副本和自由文字人工審查；不得把程式測試標成正式驗收。
 
 驗證結果：48後端單元／交易替身、10前端單元、9App browser mock通過，Next静態建置成功；pytest有1項Starlette/httpx棄用警告。未重建APK，既有APK不含本輪GPS變更。
+
+Android CI追加：標準ubuntu-24.04首次run 37101823813失敗（KVM預設讀寫權限不足），未sudo擴權、未SDK授權、未build/install/launch。最小一次性ACL提案待使用者確認，詳見ANDROID_CI.md；未增加Azure/DB權限或變更部署包。

@@ -41,3 +41,5 @@ API串接輪次：23後端單元／mock、6 App browser合同通過；轉盤確�
 完整分區證據與受阻清單見 [SECURITY_REVIEW.md](SECURITY_REVIEW.md)。本階段33後端、10前端單元、6App mock合同及帳號頁browser mock通過；所有真SQL／Android要求仍不能標PASS。
 
 刪除工具／GPS階段：48個後端單元／交易替身、10前端單元、9個App browser mock通過；前端靜態建置成功。004僅檔案，owner清除預設停用。真SQL與Android項目仍未PASS。
+
+Android CI基線：已建立公開標準runner有界workflow並執行一次，run 37101823813終態failure。KVM預設權限不足，建置／安裝／啟動前即停止；A01/A02仍BLOCKED。具體證據與待批准最小ACL見 [ANDROID_CI.md](ANDROID_CI.md)。沒有改Azure部署包。
