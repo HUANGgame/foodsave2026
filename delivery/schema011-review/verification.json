@@ -1,6 +1,6 @@
 {
   "status": "review-only-not-deployed",
-  "source_commit": "e60a3621b4b01040e5c940f9f801973009128ab0",
+  "source_commit": "4493ad5271ad514489023b85458120284323f0b6",
   "packages": [
     {
       "file": "foodsave-f1-code.zip",
@@ -27,8 +27,8 @@
     },
     {
       "file": "foodsave-owner-migrations.zip",
-      "bytes": 36215,
-      "sha256": "fe93170cad4368f9293e1962a5295be98edb7abb18345a1ff354843a31be8233",
+      "bytes": 36239,
+      "sha256": "0291a7a3b8fa366263ebc60ac0a15d02195cc469009121a8a49d821b519ab243",
       "entries": [
         "foodsave/__init__.py",
         "foodsave/admin.py",
@@ -66,5 +66,9 @@
   "grant_review": {
     "file": "infra/sqlserver/runtime-grant-011.review.sql",
     "sha256": "b32224e2dc53d11fc63c8f993389aaa33c3751907f7625faa00b25f3fc7e6c25"
+  },
+  "migration007": {
+    "bytes": 2996,
+    "sha256": "650322f88808ddd81a33e78639aba1a3077e744e582a330a068ec3f688431a43"
   }
 }
