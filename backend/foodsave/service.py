@@ -126,6 +126,9 @@ class Service:
             now = one(c, 'SELECT SYSUTCDATETIME() AS now')['now']
             expiry = min(now + timedelta(minutes=30), p['pickup_deadline'])
             snapshot = {k: p[k] for k in ('name','store_id','original_price_minor','sale_price_minor','photo_url')}
+            store = one(c, 'SELECT latitude,longitude FROM dbo.stores WHERE id=:id', id=p['store_id'])
+            if store:
+                snapshot.update(latitude=float(store['latitude']), longitude=float(store['longitude']))
             execute(c, "INSERT INTO dbo.reservations(id,user_id,product_id,state,quantity,snapshot,pickup_code_hash,expires_at) VALUES(:id,:u,:p,'waiting',:q,:snapshot,:code,:expiry)",
                     id=identity, u=user['id'], p=product_id, q=quantity, snapshot=dump(snapshot), code=digest(code), expiry=expiry)
             return {'id': identity, 'state': 'waiting', 'quantity': quantity, 'pickup_code': code, 'pickup_qr': qr, 'expires_at': expiry, 'snapshot': snapshot}

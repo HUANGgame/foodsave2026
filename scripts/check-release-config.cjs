@@ -1,6 +1,7 @@
 // Run BEFORE a release web build; no secrets are needed or emitted.
 const required=['NEXT_PUBLIC_API_BASE_URL','NEXT_PUBLIC_OPERATOR_NAME','NEXT_PUBLIC_PRIVACY_CONTACT','NEXT_PUBLIC_RETENTION_SUMMARY','FOODSAVE_APPLICATION_ID'];
 const missing=required.filter(k=>!process.env[k]);
+if(process.env.NEXT_PUBLIC_PRIVACY_POLICY_COMPLETE!=='true')missing.push('reviewed complete privacy/retention policy');
 if(process.env.NEXT_PUBLIC_APP_MODE!=='live')missing.push('NEXT_PUBLIC_APP_MODE=live');
 let base;
 try{base=new URL(process.env.NEXT_PUBLIC_API_BASE_URL||'');}catch{}

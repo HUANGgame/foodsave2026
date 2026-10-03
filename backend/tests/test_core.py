@@ -360,3 +360,13 @@ def test_deletion_rejects_owner_fields(client, field, value):
     body = {'password': PASSWORD, 'confirm': 'DELETE', field: value}
     assert client.post('/account/deletion-requests', headers={'Authorization':f'Bearer {SESSION}'}, json=body).status_code == 422
     assert client.post('/account/deletion-request', json={**body,'email':'member@example.test'}).status_code == 422
+
+
+def test_approved_operator_does_not_open_registration_without_complete_policy(client, monkeypatch):
+    for name in ('FOODSAVE_OPERATOR_NAME','FOODSAVE_PRIVACY_CONTACT','FOODSAVE_RETENTION_SUMMARY','FOODSAVE_PRIVACY_POLICY_COMPLETE'):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv('FOODSAVE_REGISTRATION_ENABLED','true')
+    response=client.get('/privacy').json()
+    assert response['operator']=='HUANG' and response['contact']=='413637629@o365.tku.edu.tw'
+    assert response['status']=='draft' and response['request_is_erasure'] is False
+    assert client.post('/auth/register',json={'email':'qa@example.invalid','password':PASSWORD}).status_code==503

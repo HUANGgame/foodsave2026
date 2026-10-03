@@ -63,3 +63,9 @@ App串真API及服務／DB重啟驗收、管理員與viewer身分、公開HTTPS�
 後端 `/account` 提供App外的刪除申請與查詢，用原帳密驗證，不需既有session。回覆遺失可重送；既有申請不重建、不再返還庫存。`/privacy`顯示營運者配置或draft。最終抹除仍未完成，詳見SECURITY_REVIEW.md，不能把requested當completed。
 
 下一階段最小測試、兩組待確認輸入與交付限制見 [LIVE_APP_ACCEPTANCE.md](LIVE_APP_ACCEPTANCE.md)。維持註冊關閉、runtime權限及部署包不變。
+
+## 簡化取貨與最新隱私增量（尚未部署驗收）
+
+商家主頁三入口為快速上架／掃碼取貨／今日訂單；常用商品沿用資料，調整數量、惜食價及截止；inline ±1由後端原子更新。掃碼只核對，唯一「確認交付」才核銷；失敗顯示未確認並沿用原識別碼重試。相機拒絕後用手動碼，仍先核對再確認。舊直接手動核銷API保留相容性，新App不使用；完整變更及驗證範圍見PICKUP_INCREMENT.md。
+
+營運者HUANG、客服413637629@o365.tku.edu.tw；批准立即停用登入及30天內清除可識別個資。這是處理期限，不是已啟用自動清除。必要業務紀錄保存原因／期限與備份流程待定，FOODSAVE_PRIVACY_POLICY_COMPLETE及NEXT_PUBLIC_PRIVACY_POLICY_COMPLETE保持false，FOODSAVE_REGISTRATION_ENABLED保持false。不要自行執行真人永久刪除；owner清除政策所需其他期限不可憑空補值。

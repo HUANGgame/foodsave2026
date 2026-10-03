@@ -79,3 +79,51 @@ def test_untrusted_qr_formats_rejected(credential):
 @pytest.mark.parametrize('delta', [0,2,-2,True,1.5])
 def test_stock_adjustment_bounded(delta):
     with pytest.raises(ValidationError): S.StockAdjustment(delta=delta)
+
+
+def test_confirmation_rechecks_owner_and_never_awards_other_store(monkeypatch):
+    sequence=iter([{'product_id':'p'},{'id':'p','owner_id':'other-vendor'}, {'user_id':'consumer','pickup_code_hash':'unused','state':'waiting','expires_at':NOW+timedelta(minutes=1),'now':NOW}])
+    monkeypatch.setattr(operations,'one',lambda *a,**k:next(sequence))
+    monkeypatch.setattr(operations,'execute',lambda *a,**k:pytest.fail('must not mutate another store'))
+    with pytest.raises(HTTPException) as error: Service()._transition(None,VENDOR,'order','completed',reviewed=True)
+    assert error.value.status_code==404
+
+
+def test_confirmation_expiring_after_preview_returns_stock_not_exp(monkeypatch):
+    sequence=iter([{'product_id':'p'},{'id':'p','owner_id':'vendor'}, {'user_id':'consumer','product_id':'p','quantity':1,'state':'waiting','expires_at':NOW,'now':NOW}])
+    writes=[]
+    monkeypatch.setattr(operations,'one',lambda *a,**k:next(sequence))
+    monkeypatch.setattr(operations,'execute',lambda c,sql,**args:writes.append((sql,args)))
+    monkeypatch.setattr(operations,'award',lambda *a,**k:pytest.fail('expired cannot award EXP'))
+    assert Service()._transition(None,VENDOR,'order','completed',reviewed=True)=={'id':'order','state':'expired'}
+    assert writes[0][1]['state']=='expired' and writes[1][1]['q']==1
+
+
+@pytest.mark.parametrize('owned,changed,status', [(False,False,404),(True,False,409),(True,True,200)])
+def test_atomic_stock_adjustment_owner_and_bounds(monkeypatch, owned, changed, status):
+    from foodsave.admin import AdminService
+    import foodsave.admin as admin
+    from types import SimpleNamespace
+    svc=AdminService();svc.mutate=lambda user,operation,key,payload,action:action(None)
+    def query(c,sql,**args):
+        if 'owner_id' in sql:
+            assert args['u']=='vendor'
+            return {'id':'p'} if owned else None
+        return {'id':'p','available_quantity':0,'revision':2}
+    def execute(c,sql,**args):
+        assert owned and 'available_quantity+:delta BETWEEN 0 AND 1000000' in sql
+        assert args['delta']==-1
+        return SimpleNamespace(rowcount=1 if changed else 0)
+    monkeypatch.setattr(admin,'one',query);monkeypatch.setattr(admin,'execute',execute)
+    if status==200:
+        assert svc.adjust_stock(VENDOR,'stock-key','p',-1)['available_quantity']==0
+    else:
+        with pytest.raises(HTTPException) as error:svc.adjust_stock(VENDOR,'stock-key','p',-1)
+        assert error.value.status_code==status
+
+
+def test_duplicate_active_reservation_new_key_rejected_before_stock(monkeypatch):
+    monkeypatch.setattr(operations,'one',lambda *a,**k:{'id':'existing'})
+    monkeypatch.setattr(operations,'execute',lambda *a,**k:pytest.fail('must not decrement again'))
+    with pytest.raises(HTTPException) as error:Direct().reserve({'id':'consumer','role':'consumer'},'different-key','product',1)
+    assert error.value.status_code==409

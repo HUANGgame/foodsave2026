@@ -84,10 +84,11 @@ def live():
 
 @app.get('/privacy')
 def privacy():
-    fields = {name: os.getenv(variable, '') for name, variable in {
+    defaults = {'operator': 'HUANG', 'contact': '413637629@o365.tku.edu.tw', 'retention': '刪帳申請受理後立即停用登入，30天內清除可識別個資。必要業務紀錄另列保留原因與期限，不默默永久保存。'}
+    fields = {name: os.getenv(variable) or defaults[name] for name, variable in {
         'operator': 'FOODSAVE_OPERATOR_NAME', 'contact': 'FOODSAVE_PRIVACY_CONTACT',
         'retention': 'FOODSAVE_RETENTION_SUMMARY'}.items()}
-    return {**fields, 'status': 'configured' if all(fields.values()) else 'draft',
+    return {**fields, 'status': 'configured' if all(fields.values()) and os.getenv('FOODSAVE_PRIVACY_POLICY_COMPLETE') == 'true' else 'draft',
             'deletion_page': '/account', 'request_is_erasure': False}
 
 
