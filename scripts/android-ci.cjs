@@ -120,7 +120,19 @@ async function nativeInteractionChecks(page,mock){
  }finally{device('shell','cmd','location','set-location-enabled','true');}
  await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('link',{name:'我的預約',exact:true}).click();
  await expect(page).toHaveURL(/\/reservations\/$/);await expect(page.getByRole('heading',{name:'我的預約',exact:true})).toBeVisible();
- device('shell','input','keyevent','KEYCODE_BACK');await expect(page).toHaveURL(/\/profile\/$/);await expect(page.getByRole('heading',{name:'個人中心',exact:true})).toBeVisible();
+ const keyboardShown=()=>/mInputShown=true|isInputViewShown=true/.test(device('shell','dumpsys','input_method'));
+ console.log('Before native Back',JSON.stringify({keyboardShown:keyboardShown(),historyLength:await page.evaluate(()=>history.length)}));
+ if(keyboardShown()){
+  device('shell','input','keyevent','KEYCODE_BACK');await expect.poll(keyboardShown).toBe(false);await expect(page).toHaveURL(/\/reservations\/$/);
+  pass('First native Back dismisses visible IME without navigating; subsequent Back must navigate');
+ }
+ device('shell','input','keyevent','KEYCODE_BACK');
+ try{await expect(page).toHaveURL(/\/profile\/$/);await expect(page.getByRole('heading',{name:'個人中心',exact:true})).toBeVisible();}
+ catch(error){
+  console.log('Native Back failure state',JSON.stringify(await page.evaluate(()=>({path:location.pathname,visibility:document.visibilityState,focused:document.hasFocus(),historyLength:history.length}))));
+  try{const cdp=await page.context().newCDPSession(page);const h=await cdp.send('Page.getNavigationHistory');console.log('Native Back history',JSON.stringify({currentIndex:h.currentIndex,paths:h.entries.map(e=>new URL(e.url).hostname==='localhost'?new URL(e.url).pathname:'external')}));await cdp.detach();}catch{console.log('Navigation history diagnostic unavailable');}
+  console.log(device('logcat','-d','-v','brief','FoodSaveBack:D','*:S'));throw error;
+ }
  pass('Native Android Back returns from reservations to profile without exiting');
  await page.getByRole('link',{name:'惜食任務',exact:true}).click();
  await page.getByRole('button',{name:'開始惜食抽獎'}).click({clickCount:2});
