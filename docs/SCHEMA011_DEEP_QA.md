@@ -64,7 +64,7 @@ PYTHONPATH=. python -m qa.schema011_notification_failure
 PYTHONPATH=. python -m qa.schema011_notification_failure --execute --approved-quiet-window --manifest "$QA_PRIVATE_MANIFEST" --case "$QA_NOTIFICATION_CASE" --server "$FOODSAVE_SQL_SERVER" --database foodsave --driver "$FOODSAVE_ODBC_DRIVER"
 ```
 
-每次僅選同一manifest中的`notification-expiry`或`notification-loss`，在任何連線／寫入前保存0600 exclusive/fsync開始標記；占用本輪十批中的一批，失敗也不能重跑。保持run session guard至殘留檢查結束，同run不可平行，上一批未清理就拒絕。一個outer transaction建立3帳號／1店／1商品／1待領訂單及衝突通知；原expire_reservation或report_stock_loss必須因通知UNIQUE違反2601／2627失敗。同一T-SQL TRY/CATCH取得ERROR_NUMBER、XACT_STATE=-1及@@TRANCOUNT>=1，避免未捕捉錯誤在batch結束自動回滾後，用下一個batch誤讀0。finally rollback後重新查所有scope；即使SQL／診斷斷言失敗也執行殘留核對，某表非零仍繼續核對其他表，任何錯誤都不能判PASS。既有owner才可插入衝突通知，不新增runtime INSERT權限。**此項只證明owner交易失敗回滾，不代替既有runtime41項權限驗收。關店通知使用去重，這種注入無效，所以仍未測，不加trigger。為遵守十批累計上限，關店↔預約兩種競態順序延後；關店與新預約同時操作時的通知與刪單一致性仍未實測，先前單連線41項不能替代。**
+每次僅選同一manifest中的`notification-expiry`或`notification-loss`，在任何連線／寫入前保存0600 exclusive/fsync開始標記；占用本輪十批中的一批，失敗也不能重跑。保持run session guard至殘留檢查結束，同run不可平行，上一批未清理就拒絕。一個outer transaction建立3帳號／1店／1商品／1待領訂單及衝突通知；原expire_reservation或report_stock_loss必須因通知UNIQUE違反2601／2627失敗。同一T-SQL CATCH先保存ERROR_NUMBER、XACT_STATE及@@TRANCOUNT至local variables，再於同batch執行IF XACT_STATE()<>0 ROLLBACK，最後SELECT保存的診斷；避免doomed transaction離開batch引發3998。Python仍要求原錯誤為2601／2627、回滾前XACT_STATE=-1且@@TRANCOUNT>=1，其他錯誤不得判PASS。finally rollback後重新查所有scope；即使SQL／診斷斷言失敗也執行殘留核對，某表非零仍繼續核對其他表，任何錯誤都不能判PASS。既有owner才可插入衝突通知，不新增runtime INSERT權限。**此項只證明owner交易失敗回滾，不代替既有runtime41項權限驗收。關店通知使用去重，這種注入無效，所以仍未測，不加trigger。為遵守十批累計上限，關店↔預約兩種競態順序延後；關店與新預約同時操作時的通知與刪單一致性仍未實測，先前單連線41項不能替代。**
 
 ## 本地與部署證據分開
 
@@ -78,11 +78,11 @@ PYTHONPATH=. python -m qa.schema011_notification_failure --execute --approved-qu
 
 ## 固定復審來源（2026-10-03）
 
-QA程式固定於 `673c15e024b99b12caf0a9ace8d8b599990ad638`；本地後端170 passed（含QA安全測試），尚未Azure實跑。以下四檔於後續App／CI修補中保持不變；不得使用舊版十競態manifest。
+QA程式固定於 `dd82efdf0e7c1ec5a9ca76e2c44d77c2eed0069b`；本地後端170 passed（含QA安全測試），尚未Azure實跑。此版修正673c15e通知CATCH僅SELECT但未同batch rollback的復審blocker；其餘三檔不變。測試驗證保存診斷→rollback→回傳順序、非預期錯誤仍失敗、Python finally及全scope殘留檢查保留；這不是真SQL／driver驗證。不得使用舊版通知hash或十競態manifest。
 
 | backend/qa 檔案 | SHA256 |
 |---|---|
 | schema011_fixture.py | `a74ce0d9d1cd01c4985a44c581d8a2b0096184248f25adfd5dc9815043d5eae4` |
 | schema011_races.py | `d3c4e266f418b48a53ee96023ee8af1532ccddf3f797a9c1584563b6197041ef` |
 | schema011_cleanup.py | `f5c7586454e362bed807250159c312b5a4106a6ed2b32ee1964b4afb89e33c9c` |
-| schema011_notification_failure.py | `64506fac98aa978e67ab83a04a1f26b5c5891d776b71eb4178a1d4c6fcc2b4bb` |
+| schema011_notification_failure.py | `670bcb4066143474b00bf80cd47944e8d5878ab7eec96715bd5ec6e7f0a5996e` |
