@@ -57,11 +57,13 @@ def suite(database, manifest, case, manifest_path):
                 execute(c,"INSERT dbo.notifications(id,user_id,event_key,kind,body,related_vendor_id) VALUES(:id,:u,:k,:kind,N'Synthetic conflict only',:v)",id=ids['audit'],u=ids['consumer-a'],k=kind+':'+ids['order-seed'],kind=kind,v=ids['vendor'])
                 statement = ('EXEC dbo.expire_reservation @reservation_id=:id;' if kind=='expired' else
                              'EXEC dbo.report_stock_loss @vendor_id=:v,@product_id=:p,@expected_revision=1,@expected_pending=1,@actual_available=0;')
-                # Capture state INSIDE the same T-SQL CATCH. An uncaught
-                # XACT_ABORT error may roll back at the batch boundary.
+                # Capture diagnostics before rollback, then roll back INSIDE
+                # CATCH so a doomed transaction cannot escape the batch (3998).
                 result = one(c, "BEGIN TRY " + statement +
                              " SELECT 0 AS error_number,XACT_STATE() AS xact_state,@@TRANCOUNT AS transaction_count; END TRY "
-                             "BEGIN CATCH SELECT ERROR_NUMBER() AS error_number,XACT_STATE() AS xact_state,@@TRANCOUNT AS transaction_count; END CATCH",
+                             "BEGIN CATCH DECLARE @qa_error int=ERROR_NUMBER(),@qa_state int=XACT_STATE(),@qa_count int=@@TRANCOUNT; "
+                             "IF XACT_STATE()<>0 ROLLBACK TRANSACTION; "
+                             "SELECT @qa_error AS error_number,@qa_state AS xact_state,@qa_count AS transaction_count; END CATCH",
                              id=ids['order-seed'],v=ids['vendor'],p=ids['product'])
                 if not result or result.get('error_number') not in (2601,2627):
                     raise InjectionFailure('expected_notification_unique_failure_not_observed')

@@ -228,6 +228,11 @@ def test_notification_same_batch_and_residual_checks_even_on_failure(monkeypatch
         if 'sp_getapplock' in sql:return {'result':0}
         if sql.startswith('BEGIN TRY '):
             assert 'ERROR_NUMBER()' in sql and '@@TRANCOUNT' in sql and 'BEGIN CATCH' in sql
+            catch=sql.split('BEGIN CATCH ',1)[1]
+            capture='DECLARE @qa_error int=ERROR_NUMBER(),@qa_state int=XACT_STATE(),@qa_count int=@@TRANCOUNT;'
+            rollback='IF XACT_STATE()<>0 ROLLBACK TRANSACTION;'
+            report='SELECT @qa_error AS error_number,@qa_state AS xact_state,@qa_count AS transaction_count;'
+            assert catch.index(capture)<catch.index(rollback)<catch.index(report)<catch.index('END CATCH')
             if diagnostic is None:raise DBAPIError(None,None,Exception('(1205) withheld'))
             return diagnostic
         if c is connections[-1] and len(connections)>1:residual.append(sql)
