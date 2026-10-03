@@ -1,17 +1,19 @@
 // Actual installed Android WebView + intercepted synthetic API. Never Azure/SQL.
-const {chromium,expect}=require('@playwright/test');
+const {expect}=require('@playwright/test');
+const {_android}=require('playwright');
 const {execFileSync}=require('node:child_process');
 const {randomUUID}=require('node:crypto');
 const fs=require('node:fs');
 const adb=process.env.ANDROID_HOME+'/platform-tools/adb';
 function device(...args){return execFileSync(adb,['-s','emulator-5554',...args],{timeout:30000,encoding:'utf8'}).trim();}
-const pause=ms=>new Promise(r=>setTimeout(r,ms));
 function pass(message){console.log('PASS',message);if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,`- PASS ${message}\n`);}
 async function attach(){
- for(let i=0;i<30;i++){
-  try{const pid=device('shell','pidof','tw.foodsave.demo');device('forward','tcp:9222','localabstract:webview_devtools_remote_'+pid);return await chromium.connectOverCDP('http://127.0.0.1:9222',{timeout:2000});}catch{await pause(1000);}
- }
- throw Error('Android WebView CDP unavailable');
+ const devices=await _android.devices();
+ const target=devices.find(d=>d.serial()==='emulator-5554');
+ if(!target)throw Error('Expected actual emulator-5554');
+ target.setDefaultTimeout(30000);
+ try{const view=await target.webView({pkg:'tw.foodsave.demo'});return {page:await view.page(),close:()=>target.close()};}
+ catch(e){await target.close();throw e;}
 }
 async function fixture(page){
  let role='consumer',order=null,stock=2,submitted=null;
@@ -42,7 +44,7 @@ async function fixture(page){
 (async()=>{
  let browser=await attach();
  try{
-  const page=browser.contexts()[0].pages()[0];if(!page)throw Error('No actual WebView page');page.setDefaultTimeout(20000);
+  const page=browser.page;if(!page)throw Error('No actual WebView page');page.setDefaultTimeout(20000);
   await expect(page.locator('.brand')).toContainText('食在可惜');
   if(!page.url().startsWith('https://localhost'))throw Error('Not Capacitor local APK assets');
   pass('APK installed, native activity launched and Capacitor WebView rendered');
@@ -60,9 +62,10 @@ async function fixture(page){
   await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('button',{name:'登出',exact:true}).click();await mock.login('admin');await expect(page.getByRole('link',{name:'管理中心',exact:true})).toHaveAttribute('href','https://api.foodsave.test/admin');await expect(page.getByRole('link',{name:'商家工作台',exact:true})).toHaveCount(0);
   pass('Admin account sees its management link; vendor link absent (fixture, not admin CRUD acceptance)');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-  device('shell','am','force-stop','tw.foodsave.demo');device('shell','am','start','-W','-n','tw.foodsave.demo/.MainActivity');
+  device('shell','am','force-stop','tw.foodsave.demo');
   try{await browser.close();}catch{}
-  browser=await attach();const reopened=browser.contexts()[0].pages()[0];await expect(reopened.getByRole('button',{name:'登入',exact:true})).toBeVisible();
+  device('shell','am','start','-W','-n','tw.foodsave.demo/.MainActivity');
+  browser=await attach();const reopened=browser.page;await expect(reopened.getByRole('button',{name:'登入',exact:true})).toBeVisible();
   pass('Native force-stop/relaunch renders login and does not retain bearer session');
  }finally{await browser.close();}
 })().catch(e=>{console.error('FAIL Android fixture:',e.message);process.exitCode=1;});

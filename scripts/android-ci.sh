@@ -38,4 +38,5 @@ adb -s emulator-5554 shell service check package | grep -q found
 adb -s emulator-5554 shell input keyevent 82
 adb -s emulator-5554 install -r "$apk"
 adb -s emulator-5554 shell am start -W -n tw.foodsave.demo/.MainActivity
+printf 'PASS APK install and native Activity launch (see adb evidence above)\n' | tee -a "$GITHUB_STEP_SUMMARY"
 node scripts/android-ci.cjs
