@@ -421,3 +421,21 @@ def test_exhausted_global_budget_stops_every_http_password_entry(http,monkeypatc
     result=client.post(path,json=body,headers={'Authorization':'Bearer '+secrets.token_urlsafe(32)})
     assert result.status_code==429
     assert not db.sql and not mail.sent
+
+
+@pytest.mark.parametrize('endpoint,accepted',[
+ ('https://fixture.asiapacific.communication.azure.com',True),
+ ('https://fixture.communication.azure.com',True),
+ ('http://fixture.asiapacific.communication.azure.com',False),
+ ('https://fixture.communication.azure.com.evil.test',False),
+ ('https://fixture.asiapacific.communication.azure.com@evil.test',False),
+])
+def test_acs_accepts_regional_endpoint_only_under_expected_https_host(monkeypatch,endpoint,accepted):
+    from foodsave.account_mail import AcsAccountMail
+    monkeypatch.setenv('FOODSAVE_MAIL_APPROVED','true')
+    monkeypatch.setenv('FOODSAVE_MAIL_AUTHORIZED_UNTIL',(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat())
+    monkeypatch.setenv('FOODSAVE_ACS_EMAIL_ENDPOINT',endpoint)
+    monkeypatch.setenv('FOODSAVE_MAIL_FROM','noreply@example.test')
+    if accepted:assert AcsAccountMail().endpoint==endpoint
+    else:
+        with pytest.raises(MailUnavailable):AcsAccountMail()

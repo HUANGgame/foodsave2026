@@ -101,7 +101,7 @@ class AcsAccountMail:
         self.endpoint=os.getenv('FOODSAVE_ACS_EMAIL_ENDPOINT','').rstrip('/')
         self.sender=os.getenv('FOODSAVE_MAIL_FROM','')
         if (os.getenv('FOODSAVE_MAIL_APPROVED')!='true' or
-            not re.fullmatch(r'https://[A-Za-z0-9-]+\.communication\.azure\.com',self.endpoint) or
+            not re.fullmatch(r'https://[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)?\.communication\.azure\.com',self.endpoint) or
             not re.fullmatch(r'[A-Za-z0-9._+%-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}',self.sender)):
             raise MailUnavailable()
 
