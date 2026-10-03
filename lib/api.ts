@@ -1,8 +1,8 @@
 export type Account={id:string;email:string;role:'consumer'|'vendor'|'admin';exp:number;spins:number};
-export type LiveProduct={id:string;store_id:string;store_name:string;name:string;photo_url:string;latitude:number;longitude:number;original_price_minor:number;sale_price_minor:number;available_quantity:number;pickup_deadline:string;revision:number;active?:boolean};
+export type LiveProduct={id:string;store_id:string;store_name:string;name:string;photo_url:string;latitude:number;longitude:number;original_price_minor:number;sale_price_minor:number;available_quantity:number|null;pickup_deadline:string;revision:number;active?:boolean;source?:'foodsave'|'seven-eleven'|'familymart';service_mode?:'information'|'reservation';sourceUpdatedAt?:string|null;checkedAt?:string|null;stale?:boolean;sourceURL?:string|null};
 export type Prize={id:string;name:string;kind?:string;terms?:string;expires_at?:string;discount_percent?:number};
 export type Draw={id:string;prize:Prize;segments:{id:string;name:string}[];coupon_code?:string};
-export type Order={id:string;product_id:string;state:string;quantity:number;snapshot:string|{name:string;sale_price_minor:number};expires_at:string;pickup_code?:string;pickup_qr?:string};
+export type Order={id:string;product_id:string;state:string;quantity:number;snapshot:string|{name:string;sale_price_minor:number};expires_at:string;pickup_code?:string;pickup_qr?:string;cancellation_reason?:'vendor_closed'|null};
 export class ApiError extends Error {constructor(public status:number,message:string){super(message);}}
 export function utc(value:string){return new Date(/[zZ]|[+-]\d\d:\d\d$/.test(value)?value:value+'Z');}
 export class FoodApi {

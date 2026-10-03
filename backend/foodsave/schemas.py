@@ -30,6 +30,10 @@ class Reservation(Strict):
     quantity: int = Field(ge=1, le=10, strict=True)
 
 
+class StoreMode(Strict):
+    service_mode: Literal['information','reservation']
+
+
 class StockAdjustment(Strict):
     delta: int = Field(ge=-1, le=1, strict=True)
 

@@ -36,7 +36,7 @@ async function fixture(page){
   if(path==='/me')return json({id:role+'-fixture',email:role+'@example.test',role,spins:2-draws.length,exp:0});
   if(path==='/vendor/pickups/preview'){pickupPreviews++;expect(req.postDataJSON().credential).toBe(pickup);return json({id:'fixture-pickup',name:'Fixture便當',quantity:1,total_price_minor:5000,review_token:reviewToken,review_expires_at:'2027-01-01T12:00:00'});}
   if(path==='/vendor/pickups/confirm'){pickupConfirms++;confirmKeys.push(req.headers()['idempotency-key']);expect(req.postDataJSON().review_token).toBe(reviewToken);if(pickupConfirms===1)return route.abort('failed');return json({id:'fixture-pickup',state:'completed'});}
-  if(path==='/products')return json([{id:productId,store_id:storeId,store_name:'Fixture店家',name:'Fixture便當',photo_url:'https://images.example.test/meal.png',latitude:25.033,longitude:121.541,available_quantity:stock,original_price_minor:10000,sale_price_minor:5000,pickup_deadline:'2027-01-01T12:00:00',revision:1}]);
+  if(path==='/products')return json([{id:productId,store_id:storeId,store_name:'Fixture店家',name:'Fixture便當',photo_url:'https://images.example.test/meal.png',latitude:25.033,longitude:121.541,source:'foodsave',service_mode:'reservation',available_quantity:stock,original_price_minor:10000,sale_price_minor:5000,pickup_deadline:'2027-01-01T12:00:00',revision:1}]);
   if(path==='/favorites')return json([]);
   if(path.startsWith('/stores/'))return json({average:null,count:0,items:[]});
   if(path==='/reservations'&&method==='GET')return json(order?[order]:[]);
@@ -45,7 +45,7 @@ async function fixture(page){
   if(path==='/prizes')return json(segments);
   if(path==='/draws'&&method==='GET')return json(draws.map(d=>({id:d.id,prize_snapshot:JSON.stringify(d.prize),coupon_code:d.coupon_code})));
   if(path==='/draws'&&method==='POST'){drawRequests++;const key=req.headers()['idempotency-key'];if(drawKeys.has(key))return json(drawKeys.get(key),201);if(draws.length>=2)return json({detail:'Fixture spins exhausted'},409);const draw={id:randomUUID(),prize,segments,coupon_code:randomUUID()};draws.push(draw);drawKeys.set(key,draw);return json(draw,201);}
-  if(path==='/vendor/catalog')return json({stores:[{id:storeId,name:'Fixture店家'}],products:[]});
+  if(path==='/vendor/catalog')return json({stores:[{id:storeId,name:'Fixture店家',service_mode:'reservation'}],products:[]});
   if(path==='/vendor/reservations')return json([]);
   if(path==='/vendor/products'){submitted=req.postDataJSON();return json({id:productId,revision:1},201);}
   return json({detail:'Unexpected synthetic route'},500);
@@ -128,7 +128,7 @@ async function nativeInteractionChecks(page,mock){
   expect(await page.evaluate(()=>localStorage.getItem('foodsave-demo-v1'))).toBeNull();
   pass('Zero-spin guard, memory-only token and no demo fallback on fixture session');
   await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('button',{name:'登出',exact:true}).click();await mock.login('vendor');
-  await page.getByRole('link',{name:'商家工作台',exact:true}).click();await page.getByRole('button',{name:'快速上架',exact:true}).click();await page.getByLabel('商品名稱',{exact:true}).fill('Android Fixture便當');await page.getByLabel('已授權商品照片網址').fill('https://images.example.test/food.jpg');await page.getByLabel('原價（元）').fill('100');await page.getByLabel('惜食價（元）').fill('50');await page.getByLabel('可預約庫存').fill('2');await page.getByLabel('領取截止').fill('2027-01-01T12:00');await page.getByRole('button',{name:'儲存商品'}).click();await expect(page.getByText('商品已儲存')).toBeVisible();expect(mock.submitted).toMatchObject({original_price_minor:10000,sale_price_minor:5000,available_quantity:2});
+  await page.getByRole('link',{name:'商家工作台',exact:true}).click();await page.getByRole('button',{name:'快速上架',exact:true}).click();await page.getByLabel('商品名稱',{exact:true}).fill('Android Fixture便當');await page.getByLabel('已授權商品照片網址').fill('https://images.example.test/food.jpg');await page.getByLabel('原價（元）').fill('100');await page.getByLabel('惜食價（元）').fill('50');await page.getByLabel('剩餘數量').fill('2');await page.getByLabel('領取截止').fill('2027-01-01T12:00');await page.getByRole('button',{name:'儲存商品'}).click();await expect(page.getByText('商品已儲存')).toBeVisible();expect(mock.submitted).toMatchObject({original_price_minor:10000,sale_price_minor:5000,available_quantity:2});
   pass('Vendor form submits expected product contract from Android WebView (API fixture)');
   await page.getByRole('button',{name:'掃碼取貨',exact:true}).click();
   await denyLocationDialog(); // Same Android permission controller denial button, now CAMERA.

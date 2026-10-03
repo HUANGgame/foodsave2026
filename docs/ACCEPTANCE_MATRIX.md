@@ -55,3 +55,5 @@ Android補測：run37104919923 / f16a3a16，2026-10-03 07:06 UTC success。實�
 最新真SQL並發／清理證據（2026-10-03，部署端執行、父流程確認）：不同@@SPID的兩個connection經Barrier同步，harness結果201與409，stock0且1 reservation，3 assertions passed／exit0。P02的Service／SQL不變量通過；沒有實際HTTP雙請求或Android串真API證據。owner審阅preview digest後精確apply manifest，commit exit0；移除3 synthetic users及各1 store/product/reservation/request_result，5 tables該批residual均0。schema22 tables／001–005、runtime permissions查詢76 rows／role memberships0不變。前15項rollback及Android extended fixture PASS保留；不新增QA批次、帳號或公開註冊。
 
 取貨增量Android：run37107966613 / 7824868，2026-10-03 07:59 UTC success。原生相機拒絕→手動碼核對→一次明確確認→回覆遺失同key重試通過；掃碼解碼只在browser合成影像測試通過，真鏡頭未驗。新QR真SQL／API rollback腳本已提供但尚未執行；不能沿用舊18 SQL斷言當新流程通過。merchant新店首次設定（自主建立／指派店家）尚未實作，現有流程仍需管理員指派店家。
+
+最新模式與通知／刪除規則已覆蓋早期方案，見[MODE_AND_DELETION_PLAN.md](MODE_AND_DELETION_PLAN.md)。全店information/reservation互斥、預約轉資訊必須waiting=0、無暫停或pending-switch；merchant顯式模式入口／後端硬閘門已有本地證據。migration006與單欄UPDATE grant未執行，新版不得部署到schema005。通知後實體刪單／關店、vendor-account收藏、缺貨不得返庫、明確帳號切換仍待獨立階段；不把取消或隱藏當刪除，不把舊18 SQL／Android結果擴稱新規則PASS。

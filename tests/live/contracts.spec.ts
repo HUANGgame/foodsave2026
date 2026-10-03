@@ -14,7 +14,7 @@ async function fixture(page:Page,{drop=false,spins=1,role='consumer'}={}){
   if(path==='/auth/register')return json({id:userId,role:'consumer'},201);
   if(path==='/auth/logout')return json({logged_out:true});
   if(path==='/me')return deleted?json({detail:'請重新登入'},401):json({id:userId,email:'test@example.test',role,exp:0,spins:spins-draws});
-  if(path==='/products')return json([{id:productId,store_id:'33333333-3333-3333-3333-333333333333',store_name:'測試店家',name:'真API契約測試商品',photo_url:'https://images.example.test/food.jpg',latitude:25.033,longitude:121.541,original_price_minor:10000,sale_price_minor:5000,available_quantity:stock,pickup_deadline:'2027-01-01T00:00:00',revision:1}]);
+  if(path==='/products')return json([{id:productId,store_id:'33333333-3333-3333-3333-333333333333',store_name:'測試店家',name:'真API契約測試商品',photo_url:'https://images.example.test/food.jpg',latitude:25.033,longitude:121.541,original_price_minor:10000,sale_price_minor:5000,source:'foodsave',service_mode:'reservation',available_quantity:stock,pickup_deadline:'2027-01-01T00:00:00',revision:1}]);
   if(path==='/favorites')return json([]);
   if(path.startsWith('/stores/'))return json({average:4.5,count:2,items:[{rating:5,body:'mock評論'}]});
   if(path==='/reservations'&&method==='GET')return json(order?[order]:[]);
@@ -62,10 +62,10 @@ test('incomplete policy keeps registration closed; deletion is still only a requ
 
 test('vendor API form loads after login and sends matching product contract',async({page})=>{
  await fixture(page,{role:'vendor'});const store='33333333-3333-3333-3333-333333333333';let submitted:any=null;
- await page.route('https://api.foodsave.test/vendor/catalog',r=>r.fulfill({json:{stores:[{id:store,name:'測試商家'}],products:[]}}));
+ await page.route('https://api.foodsave.test/vendor/catalog',r=>r.fulfill({json:{stores:[{id:store,name:'測試商家',service_mode:'reservation'}],products:[]}}));
  await page.route('https://api.foodsave.test/vendor/reservations',r=>r.fulfill({json:[]}));
  await page.route('https://api.foodsave.test/vendor/products',r=>{submitted=r.request().postDataJSON();return r.fulfill({status:201,json:{id:productId,revision:1}});});
- await page.goto('/vendor/');await login(page);await page.getByRole('button',{name:'快速上架',exact:true}).click();await page.getByLabel('商品名稱',{exact:true}).fill('測試便當');await page.getByLabel('已授權商品照片網址').fill('https://images.example.test/food.jpg');await page.getByLabel('原價（元）').fill('100');await page.getByLabel('惜食價（元）').fill('50');await page.getByLabel('可預約庫存').fill('2');await page.getByLabel('領取截止').fill('2027-01-01T12:00');await page.getByRole('button',{name:'儲存商品'}).click();await expect(page.getByText('商品已儲存')).toBeVisible();expect(submitted).toMatchObject({store_id:store,original_price_minor:10000,sale_price_minor:5000,available_quantity:2,active:true,revision:1});expect(submitted.pickup_deadline).toMatch(/Z$/);
+ await page.goto('/vendor/');await login(page);await page.getByRole('button',{name:'快速上架',exact:true}).click();await page.getByLabel('商品名稱',{exact:true}).fill('測試便當');await page.getByLabel('已授權商品照片網址').fill('https://images.example.test/food.jpg');await page.getByLabel('原價（元）').fill('100');await page.getByLabel('惜食價（元）').fill('50');await page.getByLabel('剩餘數量').fill('2');await page.getByLabel('領取截止').fill('2027-01-01T12:00');await page.getByRole('button',{name:'儲存商品'}).click();await expect(page.getByText('商品已儲存')).toBeVisible();expect(submitted).toMatchObject({store_id:store,original_price_minor:10000,sale_price_minor:5000,available_quantity:2,active:true,revision:1});expect(submitted.pickup_deadline).toMatch(/Z$/);
 });
 
 for(const code of [1,2,3])test(`GPS error ${code} keeps actual API list and review return works`,async({page})=>{

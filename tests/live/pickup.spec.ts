@@ -4,16 +4,17 @@ import {randomBytes,randomUUID} from 'node:crypto';
 const credential='FS1.'+randomBytes(32).toString('base64url');
 const reviewToken=randomBytes(32).toString('base64url');
 const password=randomUUID();
-async function setup(page:any,drop=false){let previews=0,confirmations=0,stockCalls=0;const keys:string[]=[];
+async function setup(page:any,drop=false,state='completed'){let previews=0,confirmations=0,stockCalls=0;const keys:string[]=[];
  await page.route('https://api.foodsave.test/**',async(route:any)=>{const req=route.request(),path=new URL(req.url()).pathname;const json=(body:any,status=200)=>route.fulfill({json:body,status});
   if(req.method()==='OPTIONS')return route.fulfill({status:204});
   if(path==='/auth/login')return json({access_token:randomUUID()});
   if(path==='/me')return json({id:'vendor',email:'vendor@example.test',role:'vendor',exp:0,spins:0});
-  if(path==='/vendor/catalog')return json({stores:[{id:'s',name:'QA store'}],products:[{id:'p',store_id:'s',name:'QA meal',photo_url:'https://images.example.test/meal.png',original_price_minor:10000,sale_price_minor:5000,available_quantity:2+stockCalls,pickup_deadline:'2027-01-01T12:00:00',revision:1,active:true}]});
+  if(path==='/vendor/catalog'&&state==='expired'&&confirmations>0)return json({detail:'Reload unavailable'},503);
+  if(path==='/vendor/catalog')return json({stores:[{id:'s',name:'QA store',service_mode:'reservation'}],products:[{id:'p',store_id:'s',name:'QA meal',photo_url:'https://images.example.test/meal.png',original_price_minor:10000,sale_price_minor:5000,available_quantity:2+stockCalls,pickup_deadline:'2027-01-01T12:00:00',revision:1,active:true}]});
   if(['/products','/favorites','/reservations','/vendor/reservations'].includes(path))return json([]);
   if(path==='/vendor/pickups/preview'){previews++;expect(req.postDataJSON().credential).toBe(credential);return json({id:'order',name:'QA meal',quantity:1,total_price_minor:5000,review_token:reviewToken,review_expires_at:'2027-01-01T12:00:00'});}
-  if(path==='/vendor/pickups/confirm'){confirmations++;keys.push(req.headers()['idempotency-key']);expect(req.postDataJSON().review_token).toBe(reviewToken);await new Promise(r=>setTimeout(r,350));if(drop&&confirmations===1)return route.abort();return json({id:'order',state:'completed'});}
-  if(path==='/vendor/products/p/stock'){stockCalls++;await new Promise(r=>setTimeout(r,250));return json({id:'p',available_quantity:2+stockCalls,revision:2});}
+  if(path==='/vendor/pickups/confirm'){confirmations++;keys.push(req.headers()['idempotency-key']);expect(req.postDataJSON().review_token).toBe(reviewToken);await new Promise(r=>setTimeout(r,350));if(drop&&confirmations===1)return route.abort();return json({id:'order',state});}
+  if(path==='/vendor/products/p/stock'){stockCalls++;await new Promise(r=>setTimeout(r,250));return json({id:'p',source:'foodsave',service_mode:'reservation',available_quantity:2+stockCalls,revision:2});}
   return json({detail:'Unexpected fixture route'},500);
  });
  const qr=await QRCode.toDataURL(credential,{width:400,margin:4});
@@ -46,5 +47,10 @@ test('QR scan only previews; one explicit handover; lost response retries same k
 
 test('merchant inline stock double click is one intent; reuse keeps rare fields collapsed',async({page})=>{
  const state=await setup(page);await page.getByRole('button',{name:'增加 QA meal 庫存'}).click({clickCount:2});await expect(page.getByText('剩餘 3 份 · $50')).toBeVisible();expect(state.stockCalls).toBe(1);
- await page.getByRole('button',{name:'沿用商品／調價期限'}).click();await expect(page.getByLabel('惜食價（元）')).toHaveValue('50');await expect(page.getByLabel('可預約庫存')).toHaveValue('3');await expect(page.getByLabel('商品名稱',{exact:true})).not.toBeVisible();expect(await page.evaluate(()=>(window as any).__camera.starts)).toBe(0);
+ await page.getByRole('button',{name:'沿用商品／調價期限'}).click();await expect(page.getByLabel('惜食價（元）')).toHaveValue('50');await expect(page.getByLabel('剩餘數量')).toHaveValue('3');await expect(page.getByLabel('商品名稱',{exact:true})).not.toBeVisible();expect(await page.evaluate(()=>(window as any).__camera.starts)).toBe(0);
+});
+
+
+test('expired confirmation plus failed refresh never claims handover success',async({page})=>{
+ await setup(page,false,'expired');await page.getByRole('button',{name:'掃碼取貨',exact:true}).click();await expect(page.getByRole('button',{name:'確認交付',exact:true})).toBeVisible();await page.getByRole('button',{name:'確認交付',exact:true}).click();await expect(page.getByText('預約已逾時，沒有完成交付；請重新載入訂單')).toBeVisible();await expect(page.getByText(/交付成功/)).toHaveCount(0);expect(await page.evaluate(()=>(window as any).__camera.starts)).toBe(1);
 });

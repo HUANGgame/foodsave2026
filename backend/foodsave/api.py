@@ -108,7 +108,7 @@ def ready(svc: Svc):
     for attempt in range(2):
         try:
             with svc.transaction() as c:
-                found = one(c, "SELECT version FROM dbo.schema_migrations WHERE version='005_deletion_request_procedure.sql'")
+                found = one(c, "SELECT version FROM dbo.schema_migrations WHERE version='006_store_service_mode.sql'")
                 if not found:
                     raise HTTPException(503, '資料庫尚未初始化')
             return {'status': 'ready'}
@@ -275,6 +275,16 @@ def product_create(body: S.Product, user: User, svc: Svc, key: Key):
 @app.put('/vendor/products/{identity}')
 def product_update(identity: str, body: S.Product, user: User, svc: Svc, key: Key):
     return svc.save_product(user, key, body.model_dump(), identity)
+
+
+@app.put('/vendor/stores/{identity}/mode')
+def store_mode(identity: str, body: S.StoreMode, user: User, svc: Svc, key: Key):
+    return svc.set_store_mode(user, key, identity, body.service_mode)
+
+
+@app.post('/vendor/stores/{identity}/expire')
+def expire_store(identity: str, user: User, svc: Svc, key: Key):
+    return svc.expire_store_orders(user, key, identity)
 
 
 @app.post('/vendor/products/{identity}/stock')

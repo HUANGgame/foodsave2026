@@ -12,7 +12,7 @@ export default function MerchantPickup({onComplete,onBusy}:{onComplete:()=>Promi
   catch(e){setMessage(e instanceof Error?e.message:'尚未確認，請重試');setManual(true);}finally{lock.current=false;setBusy(false);}
  }
  async function confirm(){if(lock.current||!review)return;lock.current=true;setBusy(true);setMessage('');let next=false;
-  try{const result=await api.mutate<{state:string}>(`pickup-confirm:${review.key}`,'/vendor/pickups/confirm',{review_key:review.key,review_token:review.review_token});setReview(null);setRetry(false);setMessage(result.state==='completed'?'交付成功，請掃下一位':'預約已逾時，沒有完成交付');setManual(!autoScan.current);next=result.state==='completed'&&autoScan.current;void onComplete().catch(()=>setMessage('交付成功；訂單列表更新失敗，請重新載入'));}
+  try{const result=await api.mutate<{state:string}>(`pickup-confirm:${review.key}`,'/vendor/pickups/confirm',{review_key:review.key,review_token:review.review_token});setReview(null);setRetry(false);setMessage(result.state==='completed'?'交付成功，請掃下一位':'預約已逾時，沒有完成交付');setManual(!autoScan.current);next=result.state==='completed'&&autoScan.current;void onComplete().catch(()=>setMessage(result.state==='completed'?'交付成功；訂單列表更新失敗，請重新載入':'預約已逾時，沒有完成交付；請重新載入訂單'));}
   catch(e){setMessage(e instanceof Error?e.message:'尚未確認');setRetry(true);if(e instanceof ApiError&&[400,403,404,409,422].includes(e.status)){setReview(null);setRetry(false);setManual(true);}}finally{lock.current=false;setBusy(false);if(next&&!document.hidden)setScanning(true);}
  }
  return <section className="card"><h2>掃碼取貨</h2><p role="status">{message}</p>{busy&&<p role="status">正在確認，請勿重複交付…</p>}
