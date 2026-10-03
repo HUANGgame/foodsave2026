@@ -13,7 +13,12 @@ async function attach(){
  if(!target)throw Error('Expected actual emulator-5554');
  target.setDefaultTimeout(30000);
  try{const view=await target.webView({pkg:'tw.foodsave.demo'});return {page:await view.page(),close:()=>target.close()};}
- catch(e){await target.close();throw e;}
+ catch(e){
+  console.log('Detected WebViews:',target.webViews().map(v=>({pkg:v.pkg(),pid:v.pid()})));
+  // Still before fixture login; only startup errors, no account/session data.
+  try{console.log(device('logcat','-d','-v','brief','AndroidRuntime:E','chromium:E','Capacitor:E','*:S').split('\n').slice(-100).join('\n'));}catch{}
+  await target.close();throw e;
+ }
 }
 async function fixture(page){
  let role='consumer',order=null,stock=2,submitted=null;

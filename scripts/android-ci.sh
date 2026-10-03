@@ -37,6 +37,18 @@ done
 adb -s emulator-5554 shell service check package | grep -q found
 adb -s emulator-5554 shell input keyevent 82
 adb -s emulator-5554 install -r "$apk"
-adb -s emulator-5554 shell am start -W -n tw.foodsave.demo/.MainActivity
+adb -s emulator-5554 logcat -c
+launch_result=$(adb -s emulator-5554 shell am start -W -n tw.foodsave.demo/.MainActivity)
+printf '%s\n' "$launch_result"
+grep -q 'Status: ok' <<< "$launch_result"
+# Pre-login, synthetic-only diagnostics. No tokens/accounts have been entered.
+printf '::group::Android startup diagnostics\n'
+adb -s emulator-5554 shell pidof tw.foodsave.demo || true
+adb -s emulator-5554 shell dumpsys package tw.foodsave.demo | grep -E 'flags=|versionName=|versionCode=' || true
+adb -s emulator-5554 shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|tw.foodsave.demo' || true
+adb -s emulator-5554 shell dumpsys webviewupdate
+adb -s emulator-5554 shell cat /proc/net/unix | grep -E 'webview|devtools' || true
+adb -s emulator-5554 logcat -d -v brief 'AndroidRuntime:E' 'chromium:E' 'Capacitor:E' '*:S' | tail -100
+printf '::endgroup::\n'
 printf 'PASS APK install and native Activity launch (see adb evidence above)\n' | tee -a "$GITHUB_STEP_SUMMARY"
 node scripts/android-ci.cjs
