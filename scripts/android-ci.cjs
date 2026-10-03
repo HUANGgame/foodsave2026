@@ -190,6 +190,9 @@ async function nativeInteractionChecks(page,mock){
  let browser=await attach();
  try{
   const page=browser.page;if(!page)throw Error('No actual WebView page');page.setDefaultTimeout(20000);
+  page.on('crash',()=>console.log('Native diagnostic: Playwright page crash event'));
+  page.on('close',()=>console.log('Native diagnostic: Playwright page close event'));
+  page.context().on('close',()=>console.log('Native diagnostic: Playwright context close event'));
   await expect(page.locator('.brand')).toContainText('食在可惜');
   if(!page.url().startsWith('https://localhost'))throw Error('Not Capacitor local APK assets');
   pass('APK installed, native activity launched and Capacitor WebView rendered');
@@ -266,5 +269,11 @@ async function nativeInteractionChecks(page,mock){
   device('shell','am','start','-W','-n','tw.foodsave.demo/.MainActivity');
   browser=await attach();const reopened=browser.page;await expect(reopened.getByRole('button',{name:'登入',exact:true})).toBeVisible();
   pass('Native force-stop/relaunch renders login and does not retain bearer session');
- }finally{await browser.close();}
+ }catch(error){
+  // Native process/focus evidence only: no page HTML, credentials or network logs.
+  try{console.log('Failure native focus',nativeWindowFocus());}catch{console.log('Native focus unavailable');}
+  try{console.log('Failure native exit reasons',device('shell','dumpsys','activity','exit-info','tw.foodsave.demo').split('\n').filter(l=>/reason=|subreason=|status=|importance=|timestamp=|process=|pss=|rss=/.test(l)).slice(-24).join('\n'));}catch{console.log('Native exit info unavailable');}
+  try{console.log('Failure native crash markers',device('logcat','-d','-v','brief','AndroidRuntime:E','chromium:E','ActivityManager:I','*:S').split('\n').filter(l=>/FATAL EXCEPTION|Process: tw\.foodsave\.demo|Fatal signal|onRenderProcessGone|Render process|renderer.*crash|Killing .*tw\.foodsave\.demo|Force finishing activity.*tw\.foodsave\.demo/.test(l)).slice(-24).join('\n'));}catch{console.log('Native crash markers unavailable');}
+  throw error;
+ }finally{try{await browser.close();}catch{console.log('Android connection already closed during cleanup');}}
 })().catch(e=>{console.error('FAIL Android fixture:',e.message);process.exitCode=1;});
