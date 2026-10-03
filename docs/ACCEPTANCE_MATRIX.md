@@ -53,3 +53,5 @@ Android追加證據：run37103516509在commit3b87b045實際完成APK安裝／啟
 Android補測：run37104919923 / f16a3a16，2026-10-03 07:06 UTC success。實際API35 emulator鍵盤輸入／Back收鍵盤、GPS拒絕／系統定位關閉回饋、原生Back回個人頁、轉盤連點一次請求／HOME恢復／210度停獎／減少動畫及歷史恢復通過；保留原三角色fixture與程序重啟驗證。A01/P06/P06b/P06c/P09部分證據增加，但GPS允許真定位、實機FPS、外部導航、真API跨裝置及完整正式驗收仍未PASS。詳見ANDROID_CI。
 
 最新真SQL並發／清理證據（2026-10-03，部署端執行、父流程確認）：不同@@SPID的兩個connection經Barrier同步，harness結果201與409，stock0且1 reservation，3 assertions passed／exit0。P02的Service／SQL不變量通過；沒有實際HTTP雙請求或Android串真API證據。owner審阅preview digest後精確apply manifest，commit exit0；移除3 synthetic users及各1 store/product/reservation/request_result，5 tables該批residual均0。schema22 tables／001–005、runtime permissions查詢76 rows／role memberships0不變。前15項rollback及Android extended fixture PASS保留；不新增QA批次、帳號或公開註冊。
+
+取貨增量Android：run37107966613 / 7824868，2026-10-03 07:59 UTC success。原生相機拒絕→手動碼核對→一次明確確認→回覆遺失同key重試通過；掃碼解碼只在browser合成影像測試通過，真鏡頭未驗。新QR真SQL／API rollback腳本已提供但尚未執行；不能沿用舊18 SQL斷言當新流程通過。merchant新店首次設定（自主建立／指派店家）尚未實作，現有流程仍需管理員指派店家。

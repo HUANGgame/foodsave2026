@@ -61,3 +61,17 @@ Local verification covers malformed manifests, substituted IDs, preview rollback
 ## Confirmed deployment-worker outcome (2026-10-03)
 
 The parent confirmed real SQL concurrency mode completed with three assertions and exit0: two distinct @@SPIDs synchronized by Barrier; one harness status201 and one409; stock0 and exactly one committed reservation. These are direct Service calls, not actual HTTP requests. The authorized owner reviewed the preview digest and applied exactly the recovery manifest; commit exit0 removed 3 synthetic users and 1 each store/product/reservation/request_result. Post-check found zero batch rows in all five tables. Schema remained 22 tables/migrations001–005; runtime permission query returned the unchanged76 rows and role memberships0. This supplements the previous15 rollback assertions and is not a new local execution claim. Actual resource IDs, private manifest and account data are not published. The completed batch must not be recreated; future batches require scope confirmation.
+
+## New pickup rollback-only SQL / in-process API acceptance
+
+Minimal additional file: `qa/pickup_rollback.py` (standalone; no dependency on earlier QA scripts). Use compatible runtime code from7824868 or later, existing restricted runtime MI and existing private test environment with `httpx==0.28.1` available. Do not add test dependencies to the production startup/ZIP or automatically install them in the runtime. Default plan has no DB access:
+
+```sh
+PYTHONPATH=. python qa/pickup_rollback.py
+# From backend, only inside the already approved private execution environment:
+PYTHONPATH=. python qa/pickup_rollback.py --execute --approved-quiet-window --run-id "$FRESH_QA_RUN_UUID"
+```
+
+Apply an external180-second timeout. Three synthetic identities (consumer/vendor/other-vendor), one store/product, sessions, receipts and rate buckets exist only within one outer transaction; all exit paths request rollback, no commit/cleanup/owner/grant operations. Product bounds and past-expiry fixtures are scoped to fresh UUIDv5 IDs; no real rule or user updates. No manifest or credentials are written. Auth uses realSQL sessions and normal FastAPI bearer dependencies; only the service's connection is pinned to the single rollback transaction. Routes run through TestClient's **in-process ASGI transport**, not public network HTTP; this does not bypass blocked browser URLs and does not prove deployed TLS/CORS/App integration or concurrency. No new external listener.
+
+Covers reserve replay/duplicate hold, opaque QR, preview without fulfillment/stock/EXP mutation, wrong store/consumer/format, manual fallback, review binding/token/expiry, one delivery and same-key recovery, EXP policy without rule changes, stock±1/replay/negative/upper bounds, expired code/release-once, manual guess limit, then zero residual checks for7 tables plus scoped rate buckets. Successful output gives exact assertion count/names; failed output only a fixed assertion name or exception class. Review failures privately, do not print SQL/credentials/codes. The local3 safety tests and syntax check are not realSQL execution proof. Actual camera scanning remains a physical-device acceptance item.

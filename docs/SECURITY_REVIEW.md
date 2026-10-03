@@ -56,3 +56,5 @@ Android fixture進展：run37103516509 success，真APK安裝啟動、WebView中
 Android追加驗證（2026-10-03 07:06 UTC）：run37104919923 / f16a3a16 success；真APK模擬器通過鍵盤、原生Back、拒絕定位／關閉定位服務、轉盤防連點／背景恢復／精確停獎／減少動畫，既有角色fixture也通過。無權限、release除錯或憑證變更，無付費runner／cache／artifact upload；不代表真API或實機FPS。
 
 並發batch清理已收到父流程附帶的使用者明確授權。新增owner-only `backend/qa/owner_cleanup.py`，預設preview、限定manifest衍生ID與QA標記，需先審閱preview digest再apply，serializable transaction及外部引用／筆數檢查。沒有執行真SQL清理或授予runtime DELETE；部署端負責實際操作與回報。
+
+取貨增量最新：7824868 Android run37107966613 success，原生相機拒絕及手動preview/confirm/同key retry有實際APK證據，並非真鏡頭掃碼。新私有pickup_rollback.py採3 synthetic identities、單一外層rollback、真SQL／in-process FastAPI依賴認證；尚未在Azure執行。新增3項harness安全檢查通過。新介面無migration006／grant；原18項真SQL證據仍屬之前版本。隱私operator/support/30天方向已批准，policy-complete=false及registration=false，未聲稱自動刪除已部署。
