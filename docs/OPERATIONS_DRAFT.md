@@ -1,6 +1,6 @@
 # 食在可惜操作與發布手冊（整合測試版）
 
-目前：App已接後端契約；23後端單元／mock、6 App browser mock合同測試通過。真AzureSQL、跨客戶端交易與Android安裝驗收未完成。本文件不是正式營運已上線證明。
+目前：65後端本地測試通過；部署端確認真SQL rollback15項、並發3項及精確QA清理；Android extended fixture通過。App→真Azure端到端、實機及完整營運流程仍未完成。本文件不是正式營運已上線證明。
 
 ## 模式與設定
 
@@ -29,7 +29,7 @@
 
 `API_BASE/admin`登入管理帳號；側欄切換白名單表、分頁、重新載入；右側新增店家／獎品／手動次數／EXP。手動次數source_key須以`manual:`開頭且唯一。最多同時開放6個未到期獎項，店家券為8折；需真實庫存、規則與有效期，不能用示例券冒充。
 
-週排名預設3／2／1次，以 `/admin/ranking-rules` API配置；目前沒有對應圖形編輯表單。週結算／expire命令見backend README。DB查看經獨立viewer連線及欄位白名單，不接受SQL；角色建立與grant尚待批准及實測。沒有已部署可公開開啟的管理/DB查看URL。
+週排名預設3／2／1次，以 `/admin/ranking-rules` API配置；目前沒有對應圖形編輯表單。週結算／expire命令見backend README。DB查看經獨立viewer連線及欄位白名單，不接受SQL；角色建立與grant尚待批准及實測。runtime包含管理入口，但完整管理CRUD與viewer連線尚未驗收；實際URL僅經核准的私有交接提供。
 
 ## 帳號刪除與隱私
 
@@ -52,12 +52,14 @@ npx cap sync android
 
 `build:release`拒絕缺欄位、demo模式、.test／localhost API與demo package ID；這只是欄位檢查，不能代替健康／權限／隱私內容審核。Gradle仍可單獨build測試產物，交付前必須按上述流程重建並檢查嵌入網址。
 
-本輪編譯驗證用了 `api.foodsave.test` 和隱私fixture，因此產物只留作本地驗證，不是可連真服務的最終APK/AAB，不上傳Library覆蓋舊交付。API36 build、manifest／簽章／ZIP證據不等於Android啟動。
+本輪編譯驗證用了 `api.foodsave.test` 和隱私fixture，因此產物只留作本地驗證，不是可連真服務的最終APK/AAB，不上傳Library覆蓋舊交付。最新Android CI另有實際安裝／啟動與fixture互動證據，但仍未串真API；詳見ANDROID_CI.md。
 
 ## 最後整包交付仍待
 
-真SQL migrations／並發／重啟驗收、管理員與viewer身分、公開HTTPS、真獎品與營運政策、完整刪除處理、實機安裝／定位／返回／轉盤順暢度。確認後重建並交付管理站、APK/AAB、受保護DB查看連結、關係圖及本手冊。不得將代理三角色稱為三真人。
+App串真API及服務／DB重啟驗收、管理員與viewer身分、公開HTTPS、真獎品與營運政策、完整刪除處理、實機安裝／定位／返回／轉盤順暢度。確認後重建並交付管理站、APK/AAB、受保護DB查看連結、關係圖及本手冊。不得將代理三角色稱為三真人。
 
 ## 刪除申請恢復入口
 
 後端 `/account` 提供App外的刪除申請與查詢，用原帳密驗證，不需既有session。回覆遺失可重送；既有申請不重建、不再返還庫存。`/privacy`顯示營運者配置或draft。最終抹除仍未完成，詳見SECURITY_REVIEW.md，不能把requested當completed。
+
+下一階段最小測試、兩組待確認輸入與交付限制見 [LIVE_APP_ACCEPTANCE.md](LIVE_APP_ACCEPTANCE.md)。維持註冊關閉、runtime權限及部署包不變。

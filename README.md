@@ -9,7 +9,7 @@ Next.js＋Capacitor Android 與 FastAPI／Azure SQL 的惜食服務開發版本�
 - 管理頁、冪等交易程式、週結算、帳號刪除申請與登入撤銷。
 - Android compile/target36、unsigned release AAB設定；未附舊APK或測試包。
 
-刪除申請目前代表停用及待處理，**不代表完成資料抹除**。SQL並發、migration、權限與Android安裝／流暢度仍需實際環境驗證。測試商家、測試資料及mock不是營運資料。
+刪除申請目前代表停用及待處理，**不代表完成資料抹除**。真SQL migration／受限權限、rollback15項、雙連線並發3項及該批清理已由部署端確認；Android模擬器安裝與擴充fixture通過。App串真API與實機流暢度尚未驗證。測試商家、測試資料及mock不是營運資料。
 
 ## 本機開發
 
@@ -38,6 +38,6 @@ python3 -m venv .venv
 - [F1部署手冊](docs/F1_DEPLOYMENT.md)、[後端說明](backend/README.md)。只允許經核准的硬性零付費方案，不自動升級或開付費服務。
 - [操作手冊](docs/OPERATIONS_DRAFT.md)、[架構與ER](docs/ARCHITECTURE.md)、[正式驗收矩陣](docs/ACCEPTANCE_MATRIX.md)。
 
-目前驗證分為單元／API mock、瀏覽器mock合同與建置檢查；不等於真SQL或Android測試。部署前由擁有者配置專用DB與最小權限。GitHub分支保存開發成果，main不自動合併。
+最新分區證據見[安全與驗收狀態](docs/SECURITY_REVIEW.md)；真SQL和Android fixture各自通過不等於App端到端全部通過。下一輪範圍與交付輸入見[真API最小驗收方案](docs/LIVE_APP_ACCEPTANCE.md)。GitHub分支保存開發成果，main不自動合併。
 
-分階段刪除工具（預設停用，未在真SQL執行）與004 migration見 [刪除執行手冊](docs/ERASURE_RUNBOOK.md)；不需要擴大runtime權限。
+分階段刪除工具（預設停用，未在真SQL執行）與已套用004 migration見 [刪除執行手冊](docs/ERASURE_RUNBOOK.md)；不需要擴大runtime權限。
