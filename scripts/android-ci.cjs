@@ -22,7 +22,7 @@ async function attach(){
  }
 }
 async function fixture(page){
- let role='consumer',account='consumer',mode='reservation',pending=1,showProducts=true,favorite=false,noticeRead=false,modeRequests=0,lossRequests=0,pickupState='completed',offlineLogout=false,order=null,stock=2,submitted=null,drawRequests=0,pickupPreviews=0,pickupConfirms=0;const confirmKeys=[];
+ let vendorStage='existing',role='consumer',account='consumer',mode='reservation',pending=1,showProducts=true,favorite=false,noticeRead=false,modeRequests=0,lossRequests=0,pickupState='completed',offlineLogout=false,order=null,stock=2,submitted=null,drawRequests=0,pickupPreviews=0,pickupConfirms=0;const confirmKeys=[];
  const draws=[],drawKeys=new Map();
  const segments=Array.from({length:6},(_,i)=>({id:`qa-prize-${i}`,name:i===2?'Fixture8折券':`Fixture獎品${i}`}));
  const prize={...segments[2],kind:'coupon',terms:'Synthetic fixture; no redemption value',expires_at:'2027-01-01T00:00:00',discount_percent:20};
@@ -51,6 +51,8 @@ async function fixture(page){
   if(path==='/prizes')return json(segments);
   if(path==='/draws'&&method==='GET')return json(draws.map(d=>({id:d.id,prize_snapshot:JSON.stringify(d.prize),coupon_code:d.coupon_code})));
   if(path==='/draws'&&method==='POST'){drawRequests++;const key=req.headers()['idempotency-key'];if(drawKeys.has(key))return json(drawKeys.get(key),201);if(draws.length>=2)return json({detail:'Fixture spins exhausted'},409);const draw={id:randomUUID(),prize,segments,coupon_code:randomUUID()};draws.push(draw);drawKeys.set(key,draw);return json(draw,201);}
+  if(path==='/vendor/catalog'&&vendorStage==='unassigned')return json({stores:[],products:[]});
+  if(path==='/vendor/catalog'&&vendorStage==='empty')return json({stores:[{id:storeId,name:'Fixture店家',service_mode:mode,pending_orders:0}],products:[]});
   if(path==='/vendor/catalog')return json({stores:[{id:storeId,name:'Fixture店家',service_mode:mode,pending_orders:pending}],products:[{id:productId,store_id:storeId,name:'Fixture便當',photo_url:'https://images.example.test/meal.png',original_price_minor:10000,sale_price_minor:5000,available_quantity:stock,pickup_deadline:'2027-01-01T12:00:00',revision:1,active:true}]});
   if(path===`/vendor/stores/${storeId}/mode`){modeRequests++;const next=req.postDataJSON().service_mode;if(next==='information'&&pending>0)return json({detail:'Fixture仍有待領預約，不能切換模式'},409);mode=next;return json({id:storeId,service_mode:mode});}
   if(path===`/vendor/products/${productId}/stock-loss-preview`)return json({id:productId,name:'Fixture便當',revision:1,available_quantity:stock,pending_count:pending});
@@ -61,7 +63,7 @@ async function fixture(page){
  });
  await page.route('https://images.example.test/**',r=>r.abort());
  async function login(as){await page.getByLabel('電子郵件').fill(as+'@example.test');await page.getByLabel('密碼（至少12字元）').fill(password);await page.getByRole('button',{name:'登入',exact:true}).click();await expect(page.getByRole('button',{name:'登入',exact:true})).toHaveCount(0);}
- return {login,pickup,token,confirmKeys,setMode(value){mode=value;},setZeroProducts(){showProducts=false;favorite=true;},restoreProducts(){showProducts=true;},setOfflineLogout(value){offlineLogout=value;},setExpiredPickup(){pickupState='expired';},get mode(){return mode;},get modeRequests(){return modeRequests;},get lossRequests(){return lossRequests;},get pickupPreviews(){return pickupPreviews;},get pickupConfirms(){return pickupConfirms;},get draws(){return draws;},get drawRequests(){return drawRequests;},get submitted(){return submitted;},get stock(){return stock;}};
+ return {login,pickup,token,confirmKeys,setVendorStage(value){vendorStage=value;},setMode(value){mode=value;},setZeroProducts(){showProducts=false;favorite=true;},restoreProducts(){showProducts=true;},setOfflineLogout(value){offlineLogout=value;},setExpiredPickup(){pickupState='expired';},get mode(){return mode;},get modeRequests(){return modeRequests;},get lossRequests(){return lossRequests;},get pickupPreviews(){return pickupPreviews;},get pickupConfirms(){return pickupConfirms;},get draws(){return draws;},get drawRequests(){return drawRequests;},get submitted(){return submitted;},get stock(){return stock;}};
 }
 async function denyLocationDialog(){
  for(let attempt=0;attempt<4;attempt++){
@@ -214,7 +216,10 @@ async function nativeInteractionChecks(page,mock){
   pass('Offline account switch clears local login; second consumer sees neither first account orders nor notices');
   mock.setOfflineLogout(false);mock.restoreProducts();mock.setMode('reservation');
   await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('button',{name:'切換帳號',exact:true}).click();await mock.login('vendor');
-  await page.getByRole('link',{name:'商家工作台',exact:true}).click();await page.getByRole('button',{name:'快速上架',exact:true}).click();await page.getByLabel('商品名稱',{exact:true}).fill('Android Fixture便當');await page.getByLabel('已授權商品照片網址').fill('https://images.example.test/food.jpg');await page.getByLabel('原價（元）').fill('100');await page.getByLabel('惜食價（元）').fill('50');await page.getByLabel('剩餘數量').fill('2');await page.getByLabel('領取截止').fill('2027-01-01T12:00');await page.getByRole('button',{name:'儲存商品'}).click();await expect(page.getByText('商品已儲存')).toBeVisible();expect(mock.submitted).toMatchObject({original_price_minor:10000,sale_price_minor:5000,available_quantity:2});
+  mock.setVendorStage('unassigned');await page.getByRole('link',{name:'商家工作台',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'等待管理者指派店家'})).toBeVisible();await expect(page.getByRole('button',{name:'快速上架',exact:true})).toHaveCount(0);
+  mock.setVendorStage('empty');await page.getByRole('button',{name:'重新載入商家資料'}).click();await expect(page.getByRole('heading',{name:'等待管理者指派店家'})).toHaveCount(0);await expect(page.getByRole('heading',{name:'開始上架第一件商品'})).toBeVisible();await page.getByRole('button',{name:'上架第一件商品',exact:true}).click();await expect(page.getByLabel('商品名稱',{exact:true})).toBeVisible();
+  pass('Unassigned vendor refreshes into assigned store and existing first product form');mock.setVendorStage('existing');await page.getByLabel('商品名稱',{exact:true}).fill('Android Fixture便當');await page.getByLabel('已授權商品照片網址').fill('https://images.example.test/food.jpg');await page.getByLabel('原價（元）').fill('100');await page.getByLabel('惜食價（元）').fill('50');await page.getByLabel('剩餘數量').fill('2');await page.getByLabel('領取截止').fill('2027-01-01T12:00');await page.getByRole('button',{name:'儲存商品'}).click();await expect(page.getByText('商品已儲存')).toBeVisible();expect(mock.submitted).toMatchObject({original_price_minor:10000,sale_price_minor:5000,available_quantity:2});
   pass('Vendor form submits expected product contract from Android WebView (API fixture)');
   const modeSelect=page.getByLabel('Fixture店家 服務模式');await expect(modeSelect.locator('option[value="information"]')).toHaveJSProperty('disabled',true);expect(mock.modeRequests).toBe(0);
   // Synthetic server409 exercises rejection even if an altered client enables the option.
