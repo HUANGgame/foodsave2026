@@ -119,7 +119,8 @@ async function nativeInteractionChecks(page,mock){
   pass('Native location service disabled; actionable feedback without fake position');
  }finally{device('shell','cmd','location','set-location-enabled','true');}
  await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('link',{name:'我的預約',exact:true}).click();
- device('shell','input','keyevent','KEYCODE_BACK');await expect(page.getByRole('heading',{name:'個人中心',exact:true})).toBeVisible();
+ await expect(page).toHaveURL(/\/reservations\/$/);await expect(page.getByRole('heading',{name:'我的預約',exact:true})).toBeVisible();
+ device('shell','input','keyevent','KEYCODE_BACK');await expect(page).toHaveURL(/\/profile\/$/);await expect(page.getByRole('heading',{name:'個人中心',exact:true})).toBeVisible();
  pass('Native Android Back returns from reservations to profile without exiting');
  await page.getByRole('link',{name:'惜食任務',exact:true}).click();
  await page.getByRole('button',{name:'開始惜食抽獎'}).click({clickCount:2});
@@ -164,11 +165,6 @@ async function nativeInteractionChecks(page,mock){
   await mock.login('consumer');await page.getByRole('button',{name:'預約1份'}).click();await expect(page.getByText(/預約成功/)).toBeVisible();
   await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('link',{name:'我的預約',exact:true}).click();await page.getByRole('button',{name:'出示取貨碼'}).click();await expect(page.getByText(mock.pickup,{exact:true})).toBeVisible();await page.getByRole('button',{name:'取消預約',exact:true}).click();await expect(page.getByText('已取消',{exact:true})).toBeVisible();expect(mock.stock).toBe(2);
   pass('Consumer reserve, order navigation and cancellation in Android WebView (API fixture)');
-  await nativeInteractionChecks(page,mock);
-  await expect(page.getByRole('button',{name:'開始惜食抽獎'})).toBeDisabled();
-  expect(await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}))).not.toContain(mock.token);
-  expect(await page.evaluate(()=>localStorage.getItem('foodsave-demo-v1'))).toBeNull();
-  pass('Zero-spin guard, memory-only token and no demo fallback on fixture session');
   mock.setMode('information');await page.getByRole('link',{name:'探索地圖',exact:true}).click();
   await expect(page.getByText('僅提供資訊，數量以現場為準')).toBeVisible();await expect(page.getByRole('button',{name:'預約1份'})).toHaveCount(0);
   pass('Information-mode product has no reservation control in installed Android WebView');
@@ -213,6 +209,13 @@ async function nativeInteractionChecks(page,mock){
 
   await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('button',{name:'登出',exact:true}).click();await mock.login('admin');await expect(page.getByRole('link',{name:'管理中心',exact:true})).toHaveAttribute('href','https://api.foodsave.test/admin');await expect(page.getByRole('link',{name:'商家工作台',exact:true})).toHaveCount(0);
   pass('Admin account sees its management link; vendor link absent (fixture, not admin CRUD acceptance)');
+  await page.getByRole('button',{name:'切換帳號',exact:true}).click();await mock.login('consumer');
+  await nativeInteractionChecks(page,mock);
+  await expect(page.getByRole('button',{name:'開始惜食抽獎'})).toBeDisabled();
+  expect(await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}))).not.toContain(mock.token);
+  expect(await page.evaluate(()=>localStorage.getItem('foodsave-demo-v1'))).toBeNull();
+  pass('Zero-spin guard, memory-only token and no demo fallback on fixture session');
+
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   device('shell','am','force-stop','tw.foodsave.demo');
   try{await browser.close();}catch{}
