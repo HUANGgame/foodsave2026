@@ -1,14 +1,14 @@
 [
   {
     "file": "foodsave-f1-code.zip",
-    "bytes": 34598,
-    "sha256": "4aeb575b5b8a391e58eeb9fc4d1340a3a88abddce0ea0b3803925289e0443444",
-    "runtime_source_commit": "94f9d0e9e743dfb1734c5a47f96d4263bf9e654e"
+    "bytes": 34740,
+    "sha256": "d6f57733f41f3a32c234faa530215c7d44e75b55cbb38eb1a0e3a5df86862f1a",
+    "runtime_source_commit": "7927994906681639d317685d61eb00668143281d"
   },
   {
     "file": "foodsave-owner-migrations.zip",
     "bytes": 38227,
     "sha256": "5056be0df1300adc839f1d78dacbd99458c4acf4263d361116fde5d5c446b159",
-    "runtime_source_commit": "94f9d0e9e743dfb1734c5a47f96d4263bf9e654e"
+    "runtime_source_commit": "7927994906681639d317685d61eb00668143281d"
   }
 ]
