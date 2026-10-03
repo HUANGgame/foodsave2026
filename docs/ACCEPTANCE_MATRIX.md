@@ -45,3 +45,5 @@ API串接輪次：23後端單元／mock、6 App browser合同通過；轉盤確�
 Android CI基線：已建立公開標準runner有界workflow並執行一次，run 37101823813終態failure。KVM預設權限不足，建置／安裝／啟動前即停止；A01/A02仍BLOCKED。具體證據與待批准最小ACL見 [ANDROID_CI.md](ANDROID_CI.md)。沒有改Azure部署包。
 
 005階段：62後端單元／mock／靜態測試通過，實際權限須部署端驗證。Android run37102663515有安裝／Activity啟動證據，但WebView逾時且角色UI未跑；A01/A02完整驗收仍未PASS。
+
+Android追加證據：run37103516509在commit3b87b045實際完成APK安裝／啟動／WebView UI fixture及force-stop/relaunch並success。消費者預約取消、商家表單、管理員入口、零次數抽獎守衛、記憶體token檢查通過。A01/A02只是部分項目取得證據，原生定位／返回／键盘／導航、真API／跨裝置、完整三角色功能仍未PASS；詳見ANDROID_CI。先前WebView逾時未重現，未宣稱根因已消除。

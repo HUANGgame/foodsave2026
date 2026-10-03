@@ -51,3 +51,5 @@ Android CI追加：標準ubuntu-24.04首次run 37101823813失敗（KVM預設讀�
 真Azure SQL驗收發現002的inline CHECK跨欄位造成8141；已改為表級 `ck_ranking_rules_range CHECK(end_rank>=start_rank)`。檢查001–004其餘CHECK未發現同類inline跨欄位問題，新增静態結構回歸（包含舊錯誤必須被偵測）。這不是SQL編譯測試；owner須確認前次交易rollback並重跑migration，不能因001曾印Applied就認定已提交。runtime ZIP未變。
 
 005已批准的申請程序隔離：API只傳兩個UUID；程序強制未批准且owner時間空值。runtime新增單一procedure EXECUTE、基表INSERT仍拒絕。62後端測試通過（API拒絕惡意owner欄位、既有重試／交易mock、程序／grant靜態檢查）；真SQL权限与迁移未驗。Android第4run整體failure：build/sign/install/Activity成功，WebView偵測逾時，三角色UI未執行；詳見ANDROID_CI。
+
+Android fixture進展：run37103516509 success，真APK安裝啟動、WebView中消費者預約取消／商家表單／管理員入口及原生force-stop/relaunch通過。WebView provider、foreground activity及debug socket均有日誌證據，release設定未變。這是實際Android＋mock API，不是Azure／完整功能驗收；GPS、外部導航、完整admin、真SQL並發與冷啟動穩定性仍有限制。CI無artifact upload，沒有可下載CI APK。

@@ -1,4 +1,4 @@
-# Android CI 基線（尚未通過）
+# Android CI：fixture基線已單次通過
 
 [首次run](https://github.com/HUANGgame/foodsave2026/actions/runs/37101823813)：commit `efe64547ba94874eebb24d322e21317445f7a77f`，2026-10-03 UTC，終態 **failure**，總時間10秒。
 
@@ -29,3 +29,21 @@ sudo setfacl -m "u:$(id -un):rw" /dev/kvm
 第四次 [37102663515](https://github.com/HUANGgame/foodsave2026/actions/runs/37102663515)，commit8aa99902502993efe07a578bac93d9a47e88c20b：改官方Playwright Android WebView接口，仍在等待webview事件30秒逾時。APK再次build/sign/install/Activity啟動成功，**UI三角色未執行，整體failure**。簽署APK大小5,161,470 bytes，SHA256 dad5696504459b4516e32f557e63628b09459a1553c1884a88869a309ee180f1；未上傳／保留CI產物，只有job logs/summary，不是可下載的正式APK。
 
 尚未取得WebView／AndroidRuntime崩潰診斷，不能猜測實際UI已呈現或修改release debugging。下一步需有界收集純fixture啟動診斷，找出WebView未被發現原因，再決定適配；不無限重跑。未新增安全授權或接受新SDK條款。
+
+## 第五次：實際APK fixture基線通過
+
+[run37103516509](https://github.com/HUANGgame/foodsave2026/actions/runs/37103516509)，精確commit `3b87b0456ad64a8e5435487fe7910404731eb4d8`，job111147500595，終態 **success**。僅增加有限的登入前診斷；沒有改App設定、提高等待上限或啟用release除錯。
+
+證據：API35 x86_64 Google emulator；App PID1943在前景，debug APK旗標DEBUGGABLE，WebView provider com.google.android.webview 124.0.6367.219 enabled，relro完成且package dirty=false；同PID devtools socket存在。啟動錯誤篩選無輸出。Playwright官方Android接口取得真正 `https://localhost` Capacitor頁面，品牌文字已呈現。
+
+通過的實際Android操作（後端皆synthetic fixture）：
+
+- 消費者登入、預約、切個人中心／我的預約、讀取取貨碼、取消與庫存回復契約。
+- 零次數抽獎禁用；storage不含bearer token、未回退demo。
+- 商家登入及商品表單送出，驗證價格／庫存payload。
+- 管理員登入後有管理中心入口，無商家工作台入口；**不代表管理CRUD通過**。
+- 原生force-stop與relaunch後回到登入，bearer session未保留；畫面無橫向溢出。
+
+APK v1/v2簽章通過，package tw.foodsave.demo，min23/target36，大小 **5,161,466 bytes**，SHA256 `8203fd831640241dea620e21732955e26cfcfc8978077b3d4caa80651eef7b94`。依零儲存費用要求沒有artifact upload，runner檔案已隨job回收，**此hash不是可下載交付連結**。
+
+先前兩次WebView偵測逾時在此輪未重現；健康啟動證據不能倒推先前失敗原因或聲稱已消除所有冷啟動競態。保留診斷及失敗紀錄，不盲目延長等待或反覆跑成功基線。真實裝置、原生定位同意／拒絕、原生返回鍵／鍵盤／外部導航、轉盤動畫FPS、真Azure API／SQL、跨裝置及完整管理流程仍未驗收。零付費／無額外權限與SDK自動授權的限制保持。
