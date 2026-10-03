@@ -95,6 +95,19 @@ async function ensureFoodSaveForeground(){
  }).toBe(true);
  if(dismissed)pass('Known Google location-off system warning dismissed; FoodSave native focus restored without granting permission');
 }
+async function focusEmailNatively(page){
+ await ensureFoodSaveForeground();
+ await expect(page.getByLabel('電子郵件')).toBeVisible();
+ console.log('Initial WebView metrics',JSON.stringify(await page.evaluate(()=>({width:innerWidth,height:innerHeight,dpr:devicePixelRatio,scrollY,visualWidth:visualViewport?.width,visualHeight:visualViewport?.height,emailRect:document.querySelector('input[name="email"]').getBoundingClientRect().toJSON()}))));
+ for(let attempt=0;attempt<4;attempt++){
+  let xml='';try{device('shell','rm','-f','/sdcard/foodsave-qa-input.xml');device('shell','uiautomator','dump','/sdcard/foodsave-qa-input.xml');xml=device('shell','cat','/sdcard/foodsave-qa-input.xml');}catch{await pause(500);continue;}
+  const node=(xml.match(/<node[^>]*>/g)||[]).find(n=>/class="android.widget.EditText"/.test(n)&&/package="tw.foodsave.demo"/.test(n)&&/enabled="true"/.test(n)&&/password="false"/.test(n));
+  const b=node?.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);
+  if(b&&+b[3]>+b[1]&&+b[4]>+b[2]){console.log('Native email input bounds',b.slice(1).join(','));device('shell','input','tap',String(Math.floor((+b[1]+ +b[3])/2)),String(Math.floor((+b[2]+ +b[4])/2)));return;}
+  await pause(500);
+ }
+ throw Error('Visible native email input unavailable');
+}
 async function profileAfterResume(page){
  const link=page.getByRole('link',{name:'個人中心',exact:true});await expect(link).toBeVisible();
  await ensureFoodSaveForeground();
@@ -174,7 +187,7 @@ async function nativeInteractionChecks(page,mock){
   pass('APK installed, native activity launched and Capacitor WebView rendered');
   const mock=await fixture(page);
   device('shell','settings','put','secure','show_ime_with_hard_keyboard','1');
-  await page.getByLabel('電子郵件').click();
+  await focusEmailNatively(page);
   await expect.poll(()=>/mInputShown=true|isInputViewShown=true/.test(device('shell','dumpsys','input_method')),{timeout:15000}).toBe(true);
   device('shell','input','text','keyboard-check@example.test');
   await expect(page.getByLabel('電子郵件')).toHaveValue('keyboard-check@example.test');
