@@ -22,7 +22,7 @@ async function attach(){
  }
 }
 async function fixture(page){
- let role='consumer',order=null,stock=2,submitted=null,drawRequests=0,pickupPreviews=0,pickupConfirms=0;const confirmKeys=[];
+ let role='consumer',account='consumer',mode='reservation',pending=1,showProducts=true,favorite=false,noticeRead=false,modeRequests=0,lossRequests=0,pickupState='completed',offlineLogout=false,order=null,stock=2,submitted=null,drawRequests=0,pickupPreviews=0,pickupConfirms=0;const confirmKeys=[];
  const draws=[],drawKeys=new Map();
  const segments=Array.from({length:6},(_,i)=>({id:`qa-prize-${i}`,name:i===2?'Fixture8折券':`Fixture獎品${i}`}));
  const prize={...segments[2],kind:'coupon',terms:'Synthetic fixture; no redemption value',expires_at:'2027-01-01T00:00:00',discount_percent:20};
@@ -31,30 +31,37 @@ async function fixture(page){
  await page.route('https://api.foodsave.test/**',route=>{
   const req=route.request(),path=new URL(req.url()).pathname,method=req.method();const json=(body,status=200)=>route.fulfill({json:body,status});
   if(method==='OPTIONS')return route.fulfill({status:204,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'*','Access-Control-Allow-Methods':'*'}});
-  if(path==='/auth/login'){const data=req.postDataJSON();role=data.email.split('@')[0];if(!['consumer','vendor','admin'].includes(role)||data.password!==password)return json({detail:'Fixture拒絕登入'},401);return json({access_token:token});}
+  if(path==='/auth/login'){const data=req.postDataJSON();account=data.email.split('@')[0];role=account==='consumer2'?'consumer':account;if(!['consumer','consumer2','vendor','admin'].includes(account)||data.password!==password)return json({detail:'Fixture拒絕登入'},401);return json({access_token:token});}
+  if(path==='/auth/logout'&&offlineLogout)return route.abort('failed');
   if(path==='/auth/logout')return json({logged_out:true});
-  if(path==='/me')return json({id:role+'-fixture',email:role+'@example.test',role,spins:2-draws.length,exp:0});
+  if(path==='/me')return json({id:account+'-fixture',email:account+'@example.test',role,spins:2-draws.length,exp:0});
   if(path==='/vendor/pickups/preview'){pickupPreviews++;expect(req.postDataJSON().credential).toBe(pickup);return json({id:'fixture-pickup',name:'Fixture便當',quantity:1,total_price_minor:5000,review_token:reviewToken,review_expires_at:'2027-01-01T12:00:00'});}
-  if(path==='/vendor/pickups/confirm'){pickupConfirms++;confirmKeys.push(req.headers()['idempotency-key']);expect(req.postDataJSON().review_token).toBe(reviewToken);if(pickupConfirms===1)return route.abort('failed');return json({id:'fixture-pickup',state:'completed'});}
-  if(path==='/products')return json([{id:productId,store_id:storeId,store_name:'Fixture店家',name:'Fixture便當',photo_url:'https://images.example.test/meal.png',latitude:25.033,longitude:121.541,source:'foodsave',service_mode:'reservation',available_quantity:stock,original_price_minor:10000,sale_price_minor:5000,pickup_deadline:'2027-01-01T12:00:00',revision:1}]);
-  if(path==='/stores')return json([{id:storeId,vendor_id:'fixture-vendor',name:'Fixture店家',latitude:25.033,longitude:121.541,service_mode:'reservation',product_count:1}]);
-  if(path==='/notifications')return json([]);
-  if(path==='/favorites')return json([]);
+  if(path==='/vendor/pickups/confirm'){pickupConfirms++;confirmKeys.push(req.headers()['idempotency-key']);expect(req.postDataJSON().review_token).toBe(reviewToken);if(pickupConfirms===1)return route.abort('failed');return json({id:'fixture-pickup',state:pickupState,...(pickupState==='expired'?{terminal_reason:'expired'}:{})});}
+  if(path==='/products'&&!showProducts)return json([]);
+  if(path==='/products')return json([{id:productId,store_id:storeId,store_name:'Fixture店家',name:'Fixture便當',photo_url:'https://images.example.test/meal.png',latitude:25.033,longitude:121.541,source:'foodsave',service_mode:mode,available_quantity:stock,original_price_minor:10000,sale_price_minor:5000,pickup_deadline:'2027-01-01T12:00:00',revision:1}]);
+  if(path==='/stores')return json([{id:storeId,vendor_id:'fixture-vendor',name:'Fixture店家',latitude:25.033,longitude:121.541,service_mode:mode,product_count:showProducts?1:0}]);
+  if(path==='/notifications')return json(account==='consumer'?[{id:'fixture-notice',kind:'vendor_out_of_stock',body:'Fixture缺貨通知：請勿再前往取貨。',created_at:'2026-10-03T08:00:00',read_at:noticeRead?'2026-10-03T09:00:00':null}]:[]);
+  if(path==='/notifications/fixture-notice/read'){expect(account).toBe('consumer');noticeRead=true;return json({read:true});}
+  if(path==='/favorites')return json(account==='consumer'&&favorite?['fixture-vendor']:[]);
+  if(path==='/favorites/fixture-vendor'){favorite=req.postDataJSON().enabled;return json({vendor_id:'fixture-vendor',enabled:favorite});}
   if(path.startsWith('/stores/'))return json({average:null,count:0,items:[]});
-  if(path==='/reservations'&&method==='GET')return json(order?[order]:[]);
+  if(path==='/reservations'&&method==='GET')return json(account==='consumer'&&order?[order]:[]);
   if(path==='/reservations'&&method==='POST'){stock--;order={id:'fixture-order',state:'waiting',quantity:1,product_id:productId,snapshot:{name:'Fixture便當',sale_price_minor:5000},pickup_code:pickup,expires_at:'2027-01-01T12:00:00'};return json(order,201);}
   if(path==='/reservations/fixture-order/cancel'){if(order.state==='waiting')stock++;order.state='cancelled';return json(order);}
   if(path==='/prizes')return json(segments);
   if(path==='/draws'&&method==='GET')return json(draws.map(d=>({id:d.id,prize_snapshot:JSON.stringify(d.prize),coupon_code:d.coupon_code})));
   if(path==='/draws'&&method==='POST'){drawRequests++;const key=req.headers()['idempotency-key'];if(drawKeys.has(key))return json(drawKeys.get(key),201);if(draws.length>=2)return json({detail:'Fixture spins exhausted'},409);const draw={id:randomUUID(),prize,segments,coupon_code:randomUUID()};draws.push(draw);drawKeys.set(key,draw);return json(draw,201);}
-  if(path==='/vendor/catalog')return json({stores:[{id:storeId,name:'Fixture店家',service_mode:'reservation'}],products:[]});
+  if(path==='/vendor/catalog')return json({stores:[{id:storeId,name:'Fixture店家',service_mode:mode,pending_orders:pending}],products:[{id:productId,store_id:storeId,name:'Fixture便當',photo_url:'https://images.example.test/meal.png',original_price_minor:10000,sale_price_minor:5000,available_quantity:stock,pickup_deadline:'2027-01-01T12:00:00',revision:1,active:true}]});
+  if(path===`/vendor/stores/${storeId}/mode`){modeRequests++;const next=req.postDataJSON().service_mode;if(next==='information'&&pending>0)return json({detail:'Fixture仍有待領預約，不能切換模式'},409);mode=next;return json({id:storeId,service_mode:mode});}
+  if(path===`/vendor/products/${productId}/stock-loss-preview`)return json({id:productId,name:'Fixture便當',revision:1,available_quantity:stock,pending_count:pending});
+  if(path===`/vendor/products/${productId}/stock-loss`){lossRequests++;expect(req.postDataJSON()).toEqual({expected_revision:1,expected_pending:1,actual_available:0,confirm:'CANCEL_AFFECTED'});stock=0;pending=0;noticeRead=false;return json({cancelled_count:1});}
   if(path==='/vendor/reservations')return json([]);
   if(path==='/vendor/products'){submitted=req.postDataJSON();return json({id:productId,revision:1},201);}
   return json({detail:'Unexpected synthetic route'},500);
  });
  await page.route('https://images.example.test/**',r=>r.abort());
  async function login(as){await page.getByLabel('電子郵件').fill(as+'@example.test');await page.getByLabel('密碼（至少12字元）').fill(password);await page.getByRole('button',{name:'登入',exact:true}).click();await expect(page.getByRole('button',{name:'登入',exact:true})).toHaveCount(0);}
- return {login,pickup,token,confirmKeys,get pickupPreviews(){return pickupPreviews;},get pickupConfirms(){return pickupConfirms;},get draws(){return draws;},get drawRequests(){return drawRequests;},get submitted(){return submitted;},get stock(){return stock;}};
+ return {login,pickup,token,confirmKeys,setMode(value){mode=value;},setZeroProducts(){showProducts=false;favorite=true;},restoreProducts(){showProducts=true;},setOfflineLogout(value){offlineLogout=value;},setExpiredPickup(){pickupState='expired';},get mode(){return mode;},get modeRequests(){return modeRequests;},get lossRequests(){return lossRequests;},get pickupPreviews(){return pickupPreviews;},get pickupConfirms(){return pickupConfirms;},get draws(){return draws;},get drawRequests(){return drawRequests;},get submitted(){return submitted;},get stock(){return stock;}};
 }
 async function denyLocationDialog(){
  for(let attempt=0;attempt<4;attempt++){
@@ -129,9 +136,32 @@ async function nativeInteractionChecks(page,mock){
   expect(await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}))).not.toContain(mock.token);
   expect(await page.evaluate(()=>localStorage.getItem('foodsave-demo-v1'))).toBeNull();
   pass('Zero-spin guard, memory-only token and no demo fallback on fixture session');
-  await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('button',{name:'登出',exact:true}).click();await mock.login('vendor');
+  mock.setMode('information');await page.getByRole('link',{name:'探索地圖',exact:true}).click();
+  await expect(page.getByText('僅提供資訊，數量以現場為準')).toBeVisible();await expect(page.getByRole('button',{name:'預約1份'})).toHaveCount(0);
+  pass('Information-mode product has no reservation control in installed Android WebView');
+  mock.setZeroProducts();await page.getByRole('link',{name:'我的收藏',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Fixture店家',exact:true})).toBeVisible();await expect(page.getByText('目前沒有可供應的商品，仍可收藏店家並稍後查看。')).toBeVisible();
+  await page.getByRole('button',{name:'取消收藏',exact:true}).click();await expect(page.getByRole('heading',{name:'這裡還沒有可用的好店'})).toBeVisible();
+  pass('Vendor-account favorite remains visible without products and can be removed');
+  await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('link',{name:'通知中心（1則未讀）'}).click();
+  await expect(page.getByText('Fixture缺貨通知：請勿再前往取貨。')).toBeVisible();await page.getByRole('button',{name:'標示已讀'}).click();await expect(page.getByText('已讀',{exact:true})).toBeVisible();
+  pass('In-app notification displays and explicit read updates its fixture state');
+  await page.getByRole('link',{name:'個人中心',exact:true}).click();mock.setOfflineLogout(true);await page.getByRole('button',{name:'切換帳號',exact:true}).click();await expect(page.getByText(/已清除本機登入/)).toBeVisible();
+  await mock.login('consumer2');await page.getByRole('link',{name:'通知中心（0則未讀）'}).click();await expect(page.getByText('目前沒有通知。')).toBeVisible();await expect(page.getByText('Fixture缺貨通知：請勿再前往取貨。')).toHaveCount(0);
+  await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('link',{name:'我的預約',exact:true}).click();await expect(page.getByText('目前沒有預約。')).toBeVisible();
+  pass('Offline account switch clears local login; second consumer sees neither first account orders nor notices');
+  mock.setOfflineLogout(false);mock.restoreProducts();mock.setMode('reservation');
+  await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('button',{name:'切換帳號',exact:true}).click();await mock.login('vendor');
   await page.getByRole('link',{name:'商家工作台',exact:true}).click();await page.getByRole('button',{name:'快速上架',exact:true}).click();await page.getByLabel('商品名稱',{exact:true}).fill('Android Fixture便當');await page.getByLabel('已授權商品照片網址').fill('https://images.example.test/food.jpg');await page.getByLabel('原價（元）').fill('100');await page.getByLabel('惜食價（元）').fill('50');await page.getByLabel('剩餘數量').fill('2');await page.getByLabel('領取截止').fill('2027-01-01T12:00');await page.getByRole('button',{name:'儲存商品'}).click();await expect(page.getByText('商品已儲存')).toBeVisible();expect(mock.submitted).toMatchObject({original_price_minor:10000,sale_price_minor:5000,available_quantity:2});
   pass('Vendor form submits expected product contract from Android WebView (API fixture)');
+  const modeSelect=page.getByLabel('Fixture店家 服務模式');await expect(modeSelect.locator('option[value="information"]')).toHaveJSProperty('disabled',true);expect(mock.modeRequests).toBe(0);
+  // Synthetic server409 exercises rejection even if an altered client enables the option.
+  await modeSelect.locator('option[value="information"]').evaluate(el=>el.disabled=false);await modeSelect.selectOption('information');await expect(page.getByText('Fixture仍有待領預約，不能切換模式')).toBeVisible();await expect(modeSelect).toHaveValue('reservation');expect(mock.mode).toBe('reservation');expect(mock.modeRequests).toBe(1);
+  pass('Pending mode option disabled; synthetic API409 also leaves reservation mode unchanged');
+  await page.getByRole('button',{name:'實際缺貨，無法履約',exact:true}).click();await expect(page.getByText(/將取消並移除 1 筆待領預約/)).toBeVisible();expect(mock.lossRequests).toBe(0);
+  await page.getByRole('checkbox',{name:'我確認上述預約均無法履約'}).check();await page.getByRole('button',{name:'確認缺貨並通知顧客'}).click();await expect(page.getByText(/已移除 1 筆無法履約預約/)).toBeVisible();expect(mock.lossRequests).toBe(1);expect(mock.stock).toBe(0);
+  pass('Explicit stock-loss confirmation sends revision/pending/actual contract once; fixture inventory remains zero');
+
   await page.getByRole('button',{name:'掃碼取貨',exact:true}).click();
   await denyLocationDialog(); // Same Android permission controller denial button, now CAMERA.
   await expect(page.getByLabel('手動取貨碼')).toBeVisible({timeout:15000});
@@ -143,6 +173,10 @@ async function nativeInteractionChecks(page,mock){
   expect(mock.pickupConfirms).toBe(2);expect(mock.confirmKeys[0]).toBe(mock.confirmKeys[1]);
   await expect(page.getByLabel('手動取貨碼')).toBeVisible();
   pass('Native camera denial offers manual fallback; preview does not fulfill; one confirm intent retries same key after lost reply');
+  mock.setExpiredPickup();await page.getByLabel('手動取貨碼').fill(mock.pickup);await page.getByRole('button',{name:'核對取貨碼'}).click();await page.getByRole('button',{name:'確認交付',exact:true}).click();
+  await expect(page.getByText('預約已逾時，沒有完成交付',{exact:true})).toBeVisible();await expect(page.getByText(/交付成功/)).toHaveCount(0);
+  pass('Expired confirm response displays no handover success in Android WebView');
+
 
   await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('button',{name:'登出',exact:true}).click();await mock.login('admin');await expect(page.getByRole('link',{name:'管理中心',exact:true})).toHaveAttribute('href','https://api.foodsave.test/admin');await expect(page.getByRole('link',{name:'商家工作台',exact:true})).toHaveCount(0);
   pass('Admin account sees its management link; vendor link absent (fixture, not admin CRUD acceptance)');
