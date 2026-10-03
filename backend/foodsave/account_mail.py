@@ -106,10 +106,16 @@ class AcsAccountMail:
             raise MailUnavailable()
 
     def send_code(self,email,purpose,code):
-        authorization()
-        validate_recipient(email)
         if purpose not in ('register','reset') or not re.fullmatch(r'[A-Za-z0-9_-]{43}',code):
             raise MailUnavailable()
+        self._send(email,
+                   'FoodSave 食在可惜｜'+('信箱驗證' if purpose=='register' else '重設密碼'),
+                   '請回到FoodSave App貼上一次性驗證碼，再自行設定密碼。有效期15分鐘；重送使舊碼失效。勿分享驗證碼或密碼。\n\n'+code+'\n\n非本人操作請忽略；此信不確認是否已有帳號。')
+
+    def _send(self,email,subject,plain_text):
+        # Internal transport shared with the reviewed CLI delivery probe; no HTTP route.
+        authorization()
+        validate_recipient(email)
         if not _SLOTS.acquire(timeout=1):
             raise MailUnavailable()
         try:
@@ -121,8 +127,7 @@ class AcsAccountMail:
                     message={
                         'senderAddress':self.sender,
                         'recipients':{'to':[{'address':email}]},
-                        'content':{'subject':'FoodSave 食在可惜｜'+('信箱驗證' if purpose=='register' else '重設密碼'),
-                                   'plainText':'請回到FoodSave App貼上一次性驗證碼，再自行設定密碼。有效期15分鐘；重送使舊碼失效。勿分享驗證碼或密碼。\n\n'+code+'\n\n非本人操作請忽略；此信不確認是否已有帳號。'},
+                        'content':{'subject':subject,'plainText':plain_text},
                         'userEngagementTrackingDisabled':True,
                     }
                     bounded_message(json.dumps(message,ensure_ascii=False).encode('utf-8'))
