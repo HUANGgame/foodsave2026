@@ -1,0 +1,47 @@
+name: Android fixture baseline
+on:
+  workflow_dispatch:
+  push:
+    branches: [foodsave-integration-20261003]
+    paths:
+      - '.github/workflows/android-fixture.yml'
+      - 'scripts/android-ci.*'
+      - 'android/**'
+      - 'app/**'
+      - 'components/**'
+      - 'lib/**'
+      - 'package*.json'
+      - 'capacitor.config.ts'
+permissions:
+  contents: read
+concurrency:
+  group: android-fixture-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  android:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_APP_MODE: live
+      NEXT_PUBLIC_API_BASE_URL: https://api.foodsave.test
+      NEXT_PUBLIC_OPERATOR_NAME: Contract fixture
+      NEXT_PUBLIC_PRIVACY_CONTACT: privacy@example.test
+      NEXT_PUBLIC_RETENTION_SUMMARY: Synthetic fixture only
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build, install and exercise synthetic Android fixture
+        shell: bash
+        run: bash scripts/android-ci.sh
+      - name: Report scope
+        if: always()
+        shell: bash
+        env:
+          OUTCOME: ${{ job.status }}
+        run: |
+          printf 'Android fixture job: **%s**\n\n' "$OUTCOME" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Public standard Ubuntu runner. No caches, uploaded artifacts, Azure connection or real account data.\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Native install/launch and WebView fixture UI checks count only when their PASS lines exist. No real SQL, physical device, GPS permission, FPS or full admin acceptance claim.\n' >> "$GITHUB_STEP_SUMMARY"
