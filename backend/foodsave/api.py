@@ -151,8 +151,9 @@ def registration_enabled():
 
 def account_quota(svc, request, email, action, sending=False):
     ip=request.client.host if request.client else 'unknown'
-    # Never trust arbitrary X-Forwarded-For. Deployment must approve proxy trust.
-    svc.throttle('auth:'+action+':ip',ip,limit=10,window_seconds=900)
+    # Socket peer is an aggregate proxy guard, never a trusted end-user IP.
+    # Mail guards stay unchanged; hash-entry peer budget matches global admission.
+    svc.throttle('auth:'+action+':ip',ip,limit=10 if sending else 20,window_seconds=900 if sending else 60)
     svc.throttle('auth:'+action+':email',email,limit=3 if sending else 10,window_seconds=900)
     if sending:
         svc.throttle('auth:mail:global:minute','all',limit=5,window_seconds=60)
@@ -228,7 +229,7 @@ def change_password(body:S.ChangePassword,user:User,svc:AccountSvc,value=Depends
 
 @app.post('/auth/login')
 def login(body:S.Credentials,request:Request,svc:Svc):
-    svc.throttle('login',request.client.host if request.client else 'unknown')
+    svc.throttle('login',request.client.host if request.client else 'unknown',20,60)
     svc.throttle('login:email',body.email)
     password_quota(svc)
     return svc.login(body.email,body.password)
@@ -292,7 +293,7 @@ def deletion(body: S.DeleteAccount, user: User, svc: Svc):
 
 
 def deletion_throttle(request, svc, email):
-    svc.throttle('deletion-public-ip', request.client.host if request.client else 'unknown')
+    svc.throttle('deletion-public-ip', request.client.host if request.client else 'unknown',20,60)
     svc.throttle('deletion-public-account', email)
     password_quota(svc)
 

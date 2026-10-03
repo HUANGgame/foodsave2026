@@ -439,3 +439,46 @@ def test_acs_accepts_regional_endpoint_only_under_expected_https_host(monkeypatc
     if accepted:assert AcsAccountMail().endpoint==endpoint
     else:
         with pytest.raises(MailUnavailable):AcsAccountMail()
+
+
+@pytest.mark.parametrize('path,method',[
+ ('/auth/login','login'),('/auth/verify-email','finish'),('/auth/reset-password','finish'),
+ ('/account/deletion-status','deletion_with_credentials'),('/account/deletion-request','deletion_with_credentials'),
+])
+def test_shared_proxy_allows_twenty_distinct_accounts_but_global_budget_still_blocks(http,monkeypatch,path,method):
+    client,svc,db,mail,limits=http;calls=[]
+    monkeypatch.setattr(svc,method,lambda *args,**kwargs:calls.append(1) or {'ok':True})
+    for i in range(21):
+        body={'email':f'fixture{i}@example.test','password':PASSWORD}
+        if path in ('/auth/verify-email','/auth/reset-password'):body['code']=secrets.token_urlsafe(32)
+        if path=='/account/deletion-request':body['confirm']='DELETE'
+        result=client.post(path,json=body,headers={'X-Forwarded-For':f'198.51.100.{i+1}'})
+        assert result.status_code==(429 if i==20 else 202 if path=='/account/deletion-request' else 200)
+    assert len(calls)==20 and not db.sql
+    peer_keys=[key for key in limits if key[0] in ('login','auth:finish:ip','deletion-public-ip')]
+    assert len(peer_keys)==1 and peer_keys[0][1]=='testclient'
+
+
+def test_individual_email_limit_remains_ten_per_fifteen_minutes(http,monkeypatch):
+    client,svc,db,mail,limits=http;calls=[]
+    monkeypatch.setattr(svc,'login',lambda *args:calls.append(1) or {'ok':True})
+    for i in range(11):
+        result=client.post('/auth/login',json={'email':EMAIL,'password':PASSWORD})
+        assert result.status_code==(200 if i<10 else 429)
+    assert len(calls)==10
+
+
+def test_exact_peer_and_email_quota_windows_unchanged_mail_and_adjusted_password():
+    from types import SimpleNamespace
+    calls=[]
+    svc=SimpleNamespace(throttle=lambda *a,**k:calls.append((a,k)))
+    request=SimpleNamespace(client=SimpleNamespace(host='proxy'))
+    api_module.account_quota(svc,request,EMAIL,'finish')
+    assert calls[0]==(('auth:finish:ip','proxy'),{'limit':20,'window_seconds':60})
+    assert calls[1]==(('auth:finish:email',EMAIL),{'limit':10,'window_seconds':900})
+    calls.clear();api_module.account_quota(svc,request,EMAIL,'mail',sending=True)
+    assert calls[0]==(('auth:mail:ip','proxy'),{'limit':10,'window_seconds':900})
+    assert calls[1]==(('auth:mail:email',EMAIL),{'limit':3,'window_seconds':900})
+    calls.clear();api_module.deletion_throttle(request,svc,EMAIL)
+    assert calls[0]==(('deletion-public-ip','proxy',20,60),{})
+    assert calls[-1]==(('auth:password:global','all',20,60),{})
