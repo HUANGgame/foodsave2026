@@ -12,9 +12,9 @@ if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then
   sudo setfacl -m "u:$(id -un):rw" /dev/kvm
   [[ -r /dev/kvm && -w /dev/kvm ]]
 fi
-emulator -accel-check
 # stdin is closed: an unaccepted licence must fail, never auto-accept it.
-sdkmanager 'platforms;android-36' 'build-tools;35.0.0' 'system-images;android-35;google_apis;x86_64' < /dev/null
+sdkmanager 'emulator' 'platforms;android-36' 'build-tools;35.0.0' 'system-images;android-35;google_apis;x86_64' < /dev/null
+emulator -accel-check
 npm ci --ignore-scripts --no-audit --no-fund
 npm run build
 npx --no-install cap sync android
