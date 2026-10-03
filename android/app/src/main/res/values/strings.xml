@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">食在可惜</string>
+    <string name="title_activity_main">食在可惜</string>
+    <string name="package_name">tw.foodsave.demo</string>
+    <string name="custom_url_scheme">tw.foodsave.demo</string>
+</resources>

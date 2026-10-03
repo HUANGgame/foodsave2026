@@ -1,0 +1,38 @@
+import {test,expect} from '@playwright/test';
+test('consumer reservation → vendor pickup → review; persistence and navigation',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('/');await expect(page.getByRole('heading',{name:'幸福飯糰',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'第一次使用？看 3 個小步驟'}).click();
+ await expect(page.getByRole('dialog')).toBeVisible();await page.getByRole('button',{name:'開始探索好食物'}).click();await expect(page.getByRole('dialog')).not.toBeVisible();
+ await page.getByRole('button',{name:'收藏店家',exact:true}).click();
+ await page.getByRole('button',{name:'預約 1 份',exact:true}).first().click();
+ await expect(page.getByRole('button',{name:'已預約',exact:true})).toBeVisible();
+ await page.screenshot({path:'artifacts/explore-phone.png',fullPage:true});
+ await page.getByRole('link',{name:'個人中心',exact:true}).click();
+ await page.getByRole('link',{name:'我的預約'}).click();
+ await expect(page.getByText('100001',{exact:true})).toBeVisible();
+ await page.getByRole('link',{name:'示範商家核銷',exact:true}).click();
+ await page.getByLabel('輸入 6 位示範取貨碼').fill('000000');await page.getByRole('button',{name:'確認示範領取'}).click();
+ await expect(page.getByRole('status')).toContainText('找不到');
+ await page.getByLabel('輸入 6 位示範取貨碼').fill('100001');await page.getByRole('button',{name:'確認示範領取'}).click();
+ await expect(page.getByRole('status')).toContainText('核銷成功');
+ await page.getByRole('link',{name:'查看預約與領取紀錄'}).click();
+ await page.getByLabel('評論內容').fill('取貨順利，少浪費一份美味。');await page.getByRole('button',{name:'送出評論'}).click();
+ await expect(page.getByText('取貨順利，少浪費一份美味。',{exact:false})).toBeVisible();
+ await page.getByRole('link',{name:'惜食任務',exact:true}).click();await expect(page.getByText('230 EXP',{exact:true})).toBeVisible();
+ await page.reload();await expect(page.getByText('230 EXP',{exact:true})).toBeVisible();
+ await page.screenshot({path:'artifacts/missions-phone.png',fullPage:true});
+ await page.getByRole('link',{name:'我的收藏',exact:true}).click();await expect(page.getByRole('heading',{name:'幸福飯糰'})).toBeVisible();
+ await expect(page.getByLabel('優惠通知偏好（本機）')).not.toBeChecked();await page.getByLabel('優惠通知偏好（本機）').check();
+ await page.reload();await expect(page.getByLabel('優惠通知偏好（本機）')).toBeChecked();
+ expect(errors).toEqual([]);
+});
+test('filters, no matches, offline core and desktop layout',async({page,context})=>{
+ await page.goto('/');await page.getByRole('button',{name:'免費',exact:true}).click();await page.getByRole('button',{name:'🥐 米香烘焙坊',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'今日分享小餐包'})).toBeVisible();
+ await page.getByLabel('搜尋店家或商品').fill('不存在');await expect(page.getByRole('heading',{name:'這裡還沒有示範好店'})).toBeVisible();
+ await page.getByRole('button',{name:'回到示範區域'}).click();await page.getByRole('button',{name:'🍙 幸福飯糰',exact:true}).click();
+ await context.setOffline(true);await page.getByRole('button',{name:'預約 1 份',exact:true}).first().click();await expect(page.getByRole('button',{name:'已預約',exact:true})).toBeVisible();await context.setOffline(false);
+ await page.setViewportSize({width:1280,height:900});await page.screenshot({path:'artifacts/explore-desktop.png',fullPage:true});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBeTruthy();
+});

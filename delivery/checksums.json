@@ -1,0 +1,44 @@
+[
+  {
+    "file": "foodsave-f1-code.zip",
+    "bytes": 21163,
+    "sha256": "f45929f8d98812c8892e27dadce3ba389b54a056f561cf7ec2d85170f51d6039",
+    "entries": [
+      "foodsave/__init__.py",
+      "foodsave/admin.py",
+      "foodsave/api.py",
+      "foodsave/db.py",
+      "foodsave/diagnose.py",
+      "foodsave/ranking.py",
+      "foodsave/schemas.py",
+      "foodsave/security.py",
+      "foodsave/service.py",
+      "foodsave/static/admin.css",
+      "foodsave/static/admin.html",
+      "foodsave/static/admin.js",
+      "requirements.txt",
+      "startup.sh"
+    ]
+  },
+  {
+    "file": "foodsave-owner-migrations.zip",
+    "bytes": 16991,
+    "sha256": "6c42ba4c5991302465a22a75d43cbb0537d934707f3572ed279615e5592ce9dc",
+    "entries": [
+      "foodsave/__init__.py",
+      "foodsave/admin.py",
+      "foodsave/cli.py",
+      "foodsave/db.py",
+      "foodsave/migrate.py",
+      "foodsave/ranking.py",
+      "foodsave/schemas.py",
+      "foodsave/security.py",
+      "foodsave/service.py",
+      "migrations/001_core.sql",
+      "migrations/002_rankings.sql",
+      "migrations/003_deletion_requests.sql",
+      "owner_migrate.py",
+      "requirements.txt"
+    ]
+  }
+]

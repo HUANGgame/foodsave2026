@@ -1,0 +1,47 @@
+# OBSOLETE: user requires hard zero cost. DO NOT DEPLOY Container Apps.
+# REVIEW DRAFT, NOT DEPLOYED. Resource costs/subscription/region need approval.
+# Substitute environment + immutable image digest after validation.
+# Securely provision the two named secrets separately; no secret values here.
+location: REGION_TO_CONFIRM
+properties:
+  managedEnvironmentId: /subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/Microsoft.App/managedEnvironments/ENVIRONMENT_NAME
+  configuration:
+    activeRevisionsMode: Single
+    ingress:
+      external: true
+      allowInsecure: false
+      targetPort: 8000
+      transport: auto
+  template:
+    containers:
+      - name: foodsave-api
+        image: APPROVED_REGISTRY/foodsave-api@sha256:VERIFIED_DIGEST
+        resources:
+          cpu: 0.5
+          memory: 1Gi
+        env:
+          - name: FOODSAVE_ODBC_CONNECTION
+            secretRef: foodsave-runtime-odbc
+          - name: FOODSAVE_VIEWER_ODBC_CONNECTION
+            secretRef: foodsave-viewer-odbc
+          - name: FOODSAVE_ALLOWED_ORIGINS
+            value: https://localhost
+        probes:
+          - type: Liveness
+            httpGet:
+              path: /health/live
+              port: 8000
+            periodSeconds: 30
+          - type: Readiness
+            httpGet:
+              path: /health/live
+              port: 8000
+            periodSeconds: 30
+    scale:
+      minReplicas: 0
+      maxReplicas: 1
+      rules:
+        - name: http
+          http:
+            metadata:
+              concurrentRequests: '20'
