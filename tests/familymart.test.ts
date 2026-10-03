@@ -28,3 +28,12 @@ test('failure retains explicitly old snapshot; successful empty response clears 
  const good=await source.query();now+=CACHE_MS;const failed=await source.query();assert.equal(failed.status,'unavailable');assert.equal(failed.stores.length,1);assert.equal(failed.lastSuccessAt,good.checkedAt);assert.notEqual(failed.checkedAt,failed.lastSuccessAt);
  now+=CACHE_MS;const empty=await source.query();assert.equal(empty.status,'ok');assert.deepEqual(empty.stores,[]);
 });
+test('area caches are isolated and nearby coordinates/results are never persisted',async()=>{
+ const storage=new Map<string,string>();const disk={getItem:(k:string)=>storage.get(k)||null,setItem:(k:string,v:string)=>{storage.set(k,v);}};
+ let calls=0;const transport=async()=>{calls++;return {status:200,data:payload()};};
+ const area={id:'other-public',name:'公開中心',latitude:22.625,longitude:120.314};
+ await new FamilySource(disk,transport,Date.now,PUBLIC_AREA).query();
+ const other=new FamilySource(disk,transport,Date.now,area);assert.deepEqual(other.current().stores,[]);await other.query();assert.equal(calls,2);assert.equal(storage.size,2);
+ await new FamilySource(disk,transport,Date.now,area).query();assert.equal(calls,2);
+ const nearby=new FamilySource(disk,transport,Date.now,{...area,id:'nearby-session',nearby:true});await nearby.query();await nearby.query();assert.equal(calls,3);assert.equal(storage.size,2);
+});
