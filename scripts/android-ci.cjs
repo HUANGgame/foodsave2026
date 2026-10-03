@@ -122,8 +122,9 @@ async function nativeInteractionChecks(page,mock){
  await expect(page).toHaveURL(/\/reservations\/$/);await expect(page.getByRole('heading',{name:'我的預約',exact:true})).toBeVisible();
  const keyboardShown=()=>/mInputShown=true|isInputViewShown=true/.test(device('shell','dumpsys','input_method'));
  console.log('Before native Back',JSON.stringify({keyboardShown:keyboardShown(),historyLength:await page.evaluate(()=>history.length)}));
- const windowFocus=()=>device('shell','dumpsys','window','windows').split('\n').filter(l=>/mCurrentFocus=|mFocusedApp=/.test(l)).join('\n');
+ const windowFocus=()=>{const window=device('shell','dumpsys','window').split('\n').filter(l=>/mCurrentFocus=|mFocusedApp=/.test(l));return (window.length?window:device('shell','dumpsys','activity','activities').split('\n').filter(l=>/mCurrentFocus=|mFocusedApp=/.test(l))).join('\n');};
  console.log('Before native Back window',windowFocus());
+ console.log('Before native Back power',device('shell','dumpsys','power').split('\n').filter(l=>/mWakefulness=|mInteractive=/.test(l)).join(' '));
  await expect.poll(()=>/mCurrentFocus=.*tw\.foodsave\.demo\/tw\.foodsave\.demo\.MainActivity/.test(windowFocus())).toBe(true);
  if(keyboardShown()){
   device('shell','input','keyevent','KEYCODE_BACK');await expect.poll(keyboardShown).toBe(false);await expect(page).toHaveURL(/\/reservations\/$/);
