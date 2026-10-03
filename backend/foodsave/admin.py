@@ -48,6 +48,18 @@ class AdminService(Service):
             return {'id': identity, 'revision': (data['revision'] + 1) if product_id else 1}
         return self.mutate(user, 'product.save', key, {'id': product_id, **data}, action)
 
+    def adjust_stock(self, user, key, product_id, delta):
+        require(user, 'vendor')
+        def action(c):
+            product = one(c, 'SELECT p.id FROM dbo.products p WITH(UPDLOCK,HOLDLOCK) JOIN dbo.stores s ON s.id=p.store_id WHERE p.id=:p AND s.owner_id=:u', p=product_id, u=user['id'])
+            if not product:
+                fail(404, '找不到此商品')
+            result = execute(c, 'UPDATE dbo.products SET available_quantity=available_quantity+:delta,revision=revision+1 WHERE id=:p AND available_quantity+:delta BETWEEN 0 AND 1000000', p=product_id, delta=delta)
+            if result.rowcount != 1:
+                fail(409, '庫存不能小於0，請重新載入')
+            return dict(one(c, 'SELECT id,available_quantity,revision FROM dbo.products WHERE id=:p', p=product_id))
+        return self.mutate(user, 'stock-adjust', key, {'id': product_id, 'delta': delta}, action)
+
     def create_prize(self, user, key, data):
         require(user, 'admin')
         def action(c):

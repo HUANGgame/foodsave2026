@@ -30,8 +30,27 @@ class Reservation(Strict):
     quantity: int = Field(ge=1, le=10, strict=True)
 
 
+class StockAdjustment(Strict):
+    delta: int = Field(ge=-1, le=1, strict=True)
+
+    @field_validator('delta')
+    @classmethod
+    def nonzero(cls, value):
+        if value == 0: raise ValueError('Use +1 or -1')
+        return value
+
+
 class Pickup(Strict):
     code: str = Field(pattern=r'^[A-F0-9]{12}$')
+
+
+class PickupPreview(Strict):
+    credential: str = Field(pattern=r'^(?:FS1\.[A-Za-z0-9_-]{43}|[A-F0-9]{12})$')
+
+
+class PickupConfirmation(Strict):
+    review_key: str = Field(min_length=16, max_length=80, pattern=r'^[a-zA-Z0-9_.:-]+$')
+    review_token: str = Field(pattern=r'^[A-Za-z0-9_-]{43}$')
 
 
 class Favorite(Strict):

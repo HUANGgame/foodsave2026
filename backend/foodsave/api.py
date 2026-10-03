@@ -204,6 +204,8 @@ def account_script():
 
 @app.post('/reservations', status_code=201)
 def reserve(body: S.Reservation, user: User, svc: Svc, key: Key):
+    require(user, 'consumer')
+    svc.throttle('reserve', user['id'], limit=30, window_seconds=60)
     return svc.reserve(user, key, body.product_id, body.quantity)
 
 
@@ -221,6 +223,22 @@ def cancel(identity: str, user: User, svc: Svc, key: Key):
 def complete(identity: str, body: S.Pickup, user: User, svc: Svc, key: Key):
     svc.throttle('pickup', user['id'])
     return svc.transition(user, key, identity, 'completed', body.code)
+
+
+@app.post('/vendor/pickups/preview')
+def pickup_preview(body: S.PickupPreview, user: User, svc: Svc, key: Key):
+    require(user, 'vendor')
+    # Camera scanning is not fulfillment. Bound requests per authenticated vendor.
+    svc.throttle('pickup-preview', user['id'], limit=60, window_seconds=60)
+    if not body.credential.startswith('FS1.'):
+        svc.throttle('pickup-manual', user['id'])
+    return svc.preview_pickup(user, key, body.credential)
+
+
+@app.post('/vendor/pickups/confirm')
+def pickup_confirm(body: S.PickupConfirmation, user: User, svc: Svc, key: Key):
+    require(user, 'vendor')
+    return svc.confirm_pickup(user, key, body.review_key, body.review_token)
 
 
 @app.get('/vendor/reservations')
@@ -256,6 +274,11 @@ def product_create(body: S.Product, user: User, svc: Svc, key: Key):
 @app.put('/vendor/products/{identity}')
 def product_update(identity: str, body: S.Product, user: User, svc: Svc, key: Key):
     return svc.save_product(user, key, body.model_dump(), identity)
+
+
+@app.post('/vendor/products/{identity}/stock')
+def adjust_stock(identity: str, body: S.StockAdjustment, user: User, svc: Svc, key: Key):
+    return svc.adjust_stock(user, key, identity, body.delta)
 
 
 @app.post('/admin/stores', status_code=201)

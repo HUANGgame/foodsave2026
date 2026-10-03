@@ -45,7 +45,7 @@ class Service:
     def transaction(self):
         return (self.database or engine()).begin()
 
-    def throttle(self, action, client):
+    def throttle(self, action, client, limit=10, window_seconds=900):
         # Separate committed transaction: failed authentication still consumes quota.
         bucket = digest(action + ':' + client)
         with self.transaction() as c:
@@ -53,9 +53,9 @@ class Service:
             now = one(c, 'SELECT SYSUTCDATETIME() AS now')['now']
             if not rate:
                 execute(c, 'INSERT INTO dbo.rate_limits(bucket,attempts,window_start) VALUES(:b,1,:now)', b=bucket, now=now)
-            elif now - rate['window_start'] >= timedelta(minutes=15):
+            elif now - rate['window_start'] >= timedelta(seconds=window_seconds):
                 execute(c, 'UPDATE dbo.rate_limits SET attempts=1,window_start=:now WHERE bucket=:b', b=bucket, now=now)
-            elif rate['attempts'] >= 10:
+            elif rate['attempts'] >= limit:
                 fail(429, '嘗試次數過多，請稍後再試')
             else:
                 execute(c, 'UPDATE dbo.rate_limits SET attempts=attempts+1 WHERE bucket=:b', b=bucket)
@@ -113,6 +113,8 @@ class Service:
     def reserve(self, user, key, product_id, quantity):
         require(user, 'consumer')
         def action(c):
+            if one(c, "SELECT TOP (1) id FROM dbo.reservations WHERE user_id=:u AND product_id=:p AND state='waiting' AND expires_at>SYSUTCDATETIME()", u=user['id'], p=product_id):
+                fail(409, '你已保留此商品，請到我的預約查看')
             p = one(c, 'SELECT * FROM dbo.products WITH(UPDLOCK,HOLDLOCK) WHERE id=:p AND active=1 AND pickup_deadline>SYSUTCDATETIME()', p=product_id)
             if not p:
                 fail(404, '商品不存在或已截止')
@@ -120,37 +122,77 @@ class Service:
             if result.rowcount != 1:
                 fail(409, '商品庫存不足')
             identity, code = uid(), secrets.token_hex(6).upper()
+            qr = 'FS1.' + secrets.token_urlsafe(32)
             now = one(c, 'SELECT SYSUTCDATETIME() AS now')['now']
             expiry = min(now + timedelta(minutes=30), p['pickup_deadline'])
             snapshot = {k: p[k] for k in ('name','store_id','original_price_minor','sale_price_minor','photo_url')}
             execute(c, "INSERT INTO dbo.reservations(id,user_id,product_id,state,quantity,snapshot,pickup_code_hash,expires_at) VALUES(:id,:u,:p,'waiting',:q,:snapshot,:code,:expiry)",
                     id=identity, u=user['id'], p=product_id, q=quantity, snapshot=dump(snapshot), code=digest(code), expiry=expiry)
-            return {'id': identity, 'state': 'waiting', 'quantity': quantity, 'pickup_code': code, 'expires_at': expiry, 'snapshot': snapshot}
+            return {'id': identity, 'state': 'waiting', 'quantity': quantity, 'pickup_code': code, 'pickup_qr': qr, 'expires_at': expiry, 'snapshot': snapshot}
         return self.mutate(user, 'reserve', key, {'product_id': product_id, 'quantity': quantity}, action)
 
     def transition(self, user, key, reservation_id, target, code=''):
         require(user, 'consumer' if target == 'cancelled' else 'vendor')
         def action(c):
-            # Resolve immutable product id, then lock product before reservation.
-            lookup = one(c, 'SELECT product_id FROM dbo.reservations WHERE id=:id', id=reservation_id)
-            if not lookup:
-                fail(404, '找不到預約')
-            product = one(c, 'SELECT p.id,s.owner_id FROM dbo.products p WITH(UPDLOCK,HOLDLOCK) JOIN dbo.stores s ON s.id=p.store_id WHERE p.id=:p', p=lookup['product_id'])
-            r = one(c, 'SELECT *,SYSUTCDATETIME() AS now FROM dbo.reservations WITH(UPDLOCK,HOLDLOCK) WHERE id=:id', id=reservation_id)
-            if (target == 'cancelled' and r['user_id'] != user['id']) or (target == 'completed' and product['owner_id'] != user['id']):
-                fail(404, '找不到預約')
-            if target == 'completed' and not hmac.compare_digest(r['pickup_code_hash'], digest(code)):
-                fail(400, '取貨碼不正確')
-            if r['state'] != 'waiting':
-                fail(409, '預約已處理')
-            state = 'expired' if r['expires_at'] <= r['now'] else target
-            execute(c, "UPDATE dbo.reservations SET state=:state,completed_at=CASE WHEN :state='completed' THEN SYSUTCDATETIME() ELSE NULL END WHERE id=:id", state=state, id=reservation_id)
-            if state in ('cancelled','expired'):
-                execute(c, 'UPDATE dbo.products SET available_quantity=available_quantity+:q,revision=revision+1 WHERE id=:p', q=r['quantity'], p=r['product_id'])
-            else:
-                award(c, r['user_id'], 'pickup', reservation_id)
-            return {'id': reservation_id, 'state': state}
+            return self._transition(c, user, reservation_id, target, code)
         return self.mutate(user, 'transition', key, {'id': reservation_id, 'target': target, 'code_hash': digest(code)}, action)
+
+    def _transition(self, c, user, reservation_id, target, code='', reviewed=False):
+        # Resolve immutable product id, then lock product before reservation.
+        lookup = one(c, 'SELECT product_id FROM dbo.reservations WHERE id=:id', id=reservation_id)
+        if not lookup:
+            fail(404, '找不到預約')
+        product = one(c, 'SELECT p.id,s.owner_id FROM dbo.products p WITH(UPDLOCK,HOLDLOCK) JOIN dbo.stores s ON s.id=p.store_id WHERE p.id=:p', p=lookup['product_id'])
+        r = one(c, 'SELECT *,SYSUTCDATETIME() AS now FROM dbo.reservations WITH(UPDLOCK,HOLDLOCK) WHERE id=:id', id=reservation_id)
+        if (target == 'cancelled' and r['user_id'] != user['id']) or (target == 'completed' and product['owner_id'] != user['id']):
+            fail(404, '找不到預約')
+        if target == 'completed' and not reviewed and not hmac.compare_digest(r['pickup_code_hash'], digest(code)):
+            fail(400, '取貨碼不正確')
+        if r['state'] != 'waiting':
+            fail(409, '預約已處理')
+        state = 'expired' if r['expires_at'] <= r['now'] else target
+        execute(c, "UPDATE dbo.reservations SET state=:state,completed_at=CASE WHEN :state='completed' THEN SYSUTCDATETIME() ELSE NULL END WHERE id=:id", state=state, id=reservation_id)
+        if state in ('cancelled','expired'):
+            execute(c, 'UPDATE dbo.products SET available_quantity=available_quantity+:q,revision=revision+1 WHERE id=:p', q=r['quantity'], p=r['product_id'])
+        else:
+            award(c, r['user_id'], 'pickup', reservation_id)
+        return {'id': reservation_id, 'state': state}
+
+    def preview_pickup(self, user, key, credential):
+        """Read-only order verification; persist only a short-lived confirmation receipt."""
+        require(user, 'vendor')
+        def action(c):
+            if credential.startswith('FS1.'):
+                matches = rows(c, "SELECT r.*,SYSUTCDATETIME() AS now FROM dbo.request_results q JOIN dbo.reservations r ON JSON_VALUE(q.response,'$.id')=r.id AND q.user_id=r.user_id JOIN dbo.products p ON p.id=r.product_id JOIN dbo.stores s ON s.id=p.store_id WHERE q.operation='reserve' AND JSON_VALUE(q.response,'$.pickup_qr')=:credential AND s.owner_id=:vendor", credential=credential, vendor=user['id'])
+            else:
+                matches = rows(c, "SELECT r.*,SYSUTCDATETIME() AS now FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id JOIN dbo.stores s ON s.id=p.store_id WHERE r.pickup_code_hash=:hash AND s.owner_id=:vendor", hash=digest(credential), vendor=user['id'])
+            if len(matches) != 1:
+                fail(404, '找不到可領取的預約，請重新掃碼或確認取貨碼')
+            order = matches[0]
+            if order['state'] != 'waiting' or order['expires_at'] <= order['now']:
+                fail(409, '此預約已處理或逾時，請重新載入今日訂單')
+            snapshot = json.loads(order['snapshot'])
+            return {'id': order['id'], 'name': snapshot['name'], 'quantity': order['quantity'],
+                    'unit_price_minor': snapshot['sale_price_minor'], 'total_price_minor': snapshot['sale_price_minor'] * order['quantity'],
+                    'review_token': secrets.token_urlsafe(32), 'review_expires_at': min(order['expires_at'], order['now'] + timedelta(minutes=2))}
+        # Credentials never become an idempotency key or log label.
+        return self.mutate(user, 'pickup-preview', key, {'credential_hash': digest(credential)}, action)
+
+    def confirm_pickup(self, user, key, review_key, review_token):
+        require(user, 'vendor')
+        def action(c):
+            result = one(c, "SELECT response,SYSUTCDATETIME() AS now FROM dbo.request_results WHERE user_id=:u AND operation='pickup-preview' AND request_key=:key", u=user['id'], key=review_key)
+            if not result:
+                fail(404, '請先掃碼核對商品')
+            receipt = json.loads(result['response'])
+            if not hmac.compare_digest(receipt['review_token'], review_token):
+                fail(404, '請先掃碼核對商品')
+            if datetime.fromisoformat(receipt['review_expires_at']) <= result['now']:
+                fail(409, '核對已逾時，請重新掃碼')
+            # Recheck store ownership, order state and expiry under product/order locks.
+            # The receipt is bound to this authenticated vendor and reservation.
+            return self._transition(c, user, receipt['id'], 'completed', reviewed=True)
+        return self.mutate(user, 'pickup-confirm', key, {'review_key': review_key, 'token_hash': digest(review_token)}, action)
 
     def draw(self, user, key):
         require(user, 'consumer')
@@ -186,7 +228,7 @@ class Service:
 
     def history(self, user, resource):
         queries = {
-            'reservations': "SELECT r.id,r.product_id,r.state,r.quantity,r.snapshot,r.expires_at,r.completed_at,(SELECT TOP (1) JSON_VALUE(q.response,'$.pickup_code') FROM dbo.request_results q WHERE q.user_id=r.user_id AND q.operation='reserve' AND JSON_VALUE(q.response,'$.id')=r.id) AS pickup_code FROM dbo.reservations r WHERE r.user_id=:u ORDER BY r.created_at DESC",
+            'reservations': "SELECT r.id,r.product_id,r.state,r.quantity,r.snapshot,r.expires_at,r.completed_at,(SELECT TOP (1) JSON_VALUE(q.response,'$.pickup_code') FROM dbo.request_results q WHERE q.user_id=r.user_id AND q.operation='reserve' AND JSON_VALUE(q.response,'$.id')=r.id) AS pickup_code,(SELECT TOP (1) JSON_VALUE(q.response,'$.pickup_qr') FROM dbo.request_results q WHERE q.user_id=r.user_id AND q.operation='reserve' AND JSON_VALUE(q.response,'$.id')=r.id) AS pickup_qr FROM dbo.reservations r WHERE r.user_id=:u ORDER BY r.created_at DESC",
             'draws': 'SELECT d.id,d.prize_snapshot,d.created_at,c.code AS coupon_code FROM dbo.draws d LEFT JOIN dbo.coupons c ON c.draw_id=d.id WHERE d.user_id=:u ORDER BY d.created_at DESC',
         }
         with self.transaction() as c:
