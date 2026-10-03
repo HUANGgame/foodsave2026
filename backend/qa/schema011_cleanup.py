@@ -104,6 +104,9 @@ def parameters(ids):
 def inspect(c, manifest, case):
     from foodsave.db import one, rows
     preflight(c, owner=True)
+    gate = one(c, "DECLARE @r int; EXEC @r=sp_getapplock @Resource=:resource,@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=0; SELECT @r AS result", resource='foodsave:qa011:'+manifest['run_id'])
+    if gate['result'] < 0:
+        raise ValueError('race_still_running_cleanup_refused')
     if one(c, 'SELECT COUNT(*) AS n FROM sys.foreign_keys WHERE delete_referential_action<>0 OR is_disabled=1 OR is_not_trusted=1')['n'] or one(c, 'SELECT COUNT(*) AS n FROM sys.triggers WHERE parent_class=1 AND is_disabled=0')['n']:
         raise ValueError('unexpected_foreign_keys_or_triggers')
     ids = manifest['batches'][case]; params = parameters(ids)

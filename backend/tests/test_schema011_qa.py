@@ -235,3 +235,16 @@ def test_foreign_non_fk_references_are_in_stop_scope():
     assert "RIGHT(event_key,36) IN (:a,:b,:v,:o,:n)" in cleanup.FORBIDDEN['exp_events']
     assert "JSON_VALUE(response,'$.snapshot.store_id')=:s" in cleanup.SCOPES['request_results']
     assert 'related_vendor_id IN (:a,:b,:v)' in cleanup.SCOPES['notifications']
+
+
+def test_cleanup_refuses_while_race_run_holds_guard(monkeypatch):
+    import foodsave.db as db
+    manifest,_,_=fixture()
+    monkeypatch.setattr(cleanup,'preflight',lambda *a,**k:None)
+    def one(c,sql,**params):
+        assert 'sp_getapplock' in sql and params['resource']=='foodsave:qa011:'+manifest['run_id']
+        return {'result':-1}
+    monkeypatch.setattr(db,'one',one)
+    monkeypatch.setattr(db,'rows',lambda *a,**k:pytest.fail('no scan/delete while workers running'))
+    with pytest.raises(ValueError,match='race_still_running'):
+        cleanup.inspect(None,manifest,CASES[0])
