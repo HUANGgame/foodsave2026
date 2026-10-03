@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Ephemeral runner only. No sudo, SDK licence acceptance, cache or uploads.
+# Ephemeral runner only. One explicitly approved KVM ACL; no licence acceptance/cache/uploads.
 export JAVA_HOME="${JAVA_HOME_21_X64:?Runner Java 21 required}"
 export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
 export GRADLE_USER_HOME="$RUNNER_TEMP/foodsave-gradle"
@@ -8,8 +8,9 @@ export ANDROID_USER_HOME="$RUNNER_TEMP/foodsave-android"
 export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
 mkdir -p "$ANDROID_AVD_HOME"
 if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then
-  printf 'BLOCKED: runner lacks existing KVM read/write permissions; no sudo grant performed.\n'
-  exit 2
+  command -v setfacl >/dev/null || { printf 'BLOCKED: setfacl absent; no package installation authorized.\n'; exit 2; }
+  sudo setfacl -m "u:$(id -un):rw" /dev/kvm
+  [[ -r /dev/kvm && -w /dev/kvm ]]
 fi
 emulator -accel-check
 # stdin is closed: an unaccepted licence must fail, never auto-accept it.
