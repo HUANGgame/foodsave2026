@@ -34,7 +34,7 @@ manifest固定format11／scope／10批及全部UUID；讀取須完全符合推�
 | expiry-loss | 到期還1份，舊revision缺貨409 | 缺貨release0，到期返回absent |
 | reserve-close | 預約成功，關店移除訂單／通知一次 | 關店成功，預約404 |
 
-完整case名稱為前綴加`-left`或`-right`，共10批。先跑`reserve-mode-left`，清理核對後再逐批；不提供自動執行全部或自動owner清理的迴圈。
+完整case名稱為前綴加`-left`或`-right`，共10批。**十批是本輪累計上限，只准一份manifest；失敗批次也占用該case，不另建run／manifest／批次補跑。**先跑`reserve-mode-left`，清理核對後再逐批；不提供自動執行全部或自動owner清理的迴圈。
 
 ```sh
 PYTHONPATH=. python -m qa.schema011_races --mode execute --manifest "$QA_PRIVATE_MANIFEST" --case "$QA_CASE" --approved-quiet-window --approved-committed-fixtures
@@ -52,7 +52,7 @@ PYTHONPATH=. python -m qa.schema011_cleanup --server "$FOODSAVE_SQL_SERVER" --da
 PYTHONPATH=. python -m qa.schema011_cleanup --server "$FOODSAVE_SQL_SERVER" --database foodsave --driver "$FOODSAVE_ODBC_DRIVER" --manifest "$QA_PRIVATE_MANIFEST" --case "$QA_CASE" --apply --approved-preview-sha256 "$REVIEWED_PREVIEW_SHA256"
 ```
 
-preview持SERIALIZABLE／UPDLOCK／HOLDLOCK，最後rollback。apply重新檢查相同資料及摘要，按捕獲的精確主鍵刪除request_results、notifications、reservation_terminals、reservations、audit_logs、deletion_requests、products、stores、users；每列rowcount必須1，所有scope殘留必須0才commit。procedure產生的notification UUID不由harness指定，必須先滿足精確recipient／event_key／kind／vendor／terminal對應，再固定於preview摘要及主鍵清單。
+preview先取得與worker相同run guard（timeout0），worker仍執行就拒絕清理；再持SERIALIZABLE／UPDLOCK／HOLDLOCK，最後rollback。apply重新檢查相同資料及摘要，按捕獲的精確主鍵刪除request_results、notifications、reservation_terminals、reservations、audit_logs、deletion_requests、products、stores、users；每列rowcount必須1，所有scope殘留必須0才commit。procedure產生的notification UUID不由harness指定，必須先滿足精確recipient／event_key／kind／vendor／terminal對應，再固定於preview摘要及主鍵清單。
 
 所有使用者、店商品標記、訂單UUID／身份／snapshot、操作key／fingerprint、關店request／audit UUID均需符合manifest。查詢同時涵蓋**別人指向此批的引用**；任何非synthetic、額外活動、啟用trigger、cascade／不可信FK、變動摘要或SQL失敗均停止並rollback，不擴大刪除條件。session、favorite、review、EXP、spin、draw、coupon、ranking、erasure receipt任一相關資料存在即拒絕；不刪rate_limits或共用設定。
 
@@ -70,3 +70,20 @@ PYTHONPATH=. python -m qa.schema011_notification_failure --execute --approved-qu
 ## 本地與部署證據分開
 
 本地pytest驗manifest篡改、私有檔案、外部引用、request key／fingerprint替換、已關店資料、preview不寫入、摘要變動拒絕、精確主鍵刪除及中途失敗rollback。這些是Python安全測試，不能證明T-SQL compile、driver rowcount、真鎖競爭或Azure清理成功。執行者必須另外回報每case結果與各批清理remaining=0；失敗只回固定assertion／錯誤class，不公開driver例外、SQL參數或完整row。
+
+## 固定審查來源與本地結果（2026-10-03）
+
+本輪QA最終來源commit `b29968b03e83a6a5c9becf52cd4dd7d544eed64d`。UI驗收commit為 `11f6730ceaad961684f6b98085fb63f6a11ad407`；其後只修改QA與文件。後續僅補文件時，仍以這兩個固定版本核對。
+
+| 檔案（backend/qa/） | bytes | SHA256 |
+|---|---:|---|
+| schema011_fixture.py | 6552 | `9a530e4041d3dd735f606c5b8788df8edfa25b7b9c4ece0d7751779ad423ae40` |
+| schema011_races.py | 12980 | `2c8b3d53130e8caf449c44f88ed2485df3df08373244a17eca1d0e059fb5baf9` |
+| schema011_cleanup.py | 11826 | `fe0cae0eab40fa3bb279530968b85a3edd0083e93d3bf7af2b20b5932e94c813` |
+| schema011_notification_failure.py | 4363 | `9e7ccd226d3dde7810dbb4eee682fef70226410752f044a585a352510f98ac01` |
+
+本地後端167 passed（包含新增33項QA安全測試），前端unit12 passed，Next production build／typecheck成功，live browser fixture21 passed（包含未指派→重新載入→既有首件商品表單）。一個既有FastAPI/httpx deprecation warning，未為此升級依賴。
+
+部署差異：新增獨立QA檔與文件；App的LiveVendor提示與對應fixture改變。`backend/foodsave`、migration、grant、既有runtime ZIP、owner ZIP均未改，不需要本輪後端服務重部署。執行QA時將這四檔保持在同一`qa/`目錄，使用既有schema011套件；不可將它們放入startup或公開CI。
+
+Android重驗：[workflow #19](https://github.com/HUANGgame/foodsave2026/actions/runs/37118943482)，commit11f6730；build、manifest、簽章、模擬器安裝／Activity啟動成功，但初始登入前5秒poll失敗，尚未走到入駐驗收；整輪失敗，不可宣稱Android UI通過。真SQL本輪10批／通知注入／清理尚未在此環境執行，Azure public URL限制維持。
