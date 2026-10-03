@@ -52,3 +52,7 @@
 使用者要求能找到官方i珍食商品、剩餘量與店家位置，並持續更新。資料來源研究由父流程獨立進行；現階段不猜API、不填假即時庫存、不把示範列成已串接。建議邊界：product、store（名稱／可驗地址／座標）、count（nullable，未知不能當0）、sourceUpdatedAt（來源未提供則null）、checkedAt（本次檢查時間）、stale、sourceURL；另明示來源與授權狀態。checkedAt不代表來源資料剛更新，必須保留兩者差異。
 
 外部商品是資訊查詢，與FoodSave自家上架／庫存交易明確區分；沒有真合作授權就不能由FoodSave鎖庫、預約或核銷7-ELEVEN商品，也不能保證到店一定有貨。持续更新屬App／backend取數功能，不是自動發訊息給使用者；需先核實來源授權、可用欄位、允許頻率及零費用方案，未完成前不加scheduler、付費服務或新權限。
+
+後續使用者澄清：不是限定7-ELEVEN，而是保留FoodSave自家商家上架／預約／QR核銷，**加入7-ELEVEN與全家外部資訊**，供尚無自家商家時使用；暫不加入Hi-Life。兩個provider共用以上資料契約但保留各自來源／可用性／更新时间。來源未驗證時顯示未知／暫不可用，不用假商品填滿，也不能把static store JSON當即時庫存。
+
+來源研究由父流程回報：全家官方活動說明頁 https://nevent.family.com.tw/map/index.html 說明每30分鐘更新、現場為準；https://pasmap.family.com.tw/ 實際樣本尚未取得。這不是本workspace完成串接或驗證API授權的證據。7-ELEVEN官方來源遇403，持續API授權／頻率未驗證；不可借用第三方MallKey/MID/GID、Turnstile、cookie或origin繞過限制。Friendly-Cat repo未驗證LICENSE，不能直接搬code/assets/staticdata；應獨立實作雙provider查詢／地圖／卡片。來源接入仍BLOCKED，不承諾兩家已接好。
