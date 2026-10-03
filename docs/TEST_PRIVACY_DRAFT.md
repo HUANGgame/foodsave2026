@@ -1,33 +1,60 @@
-# FoodSave 公開測試版隱私與刪除說明（待定案，不代表已啟用）
+# FoodSave 公開測試版隱私與刪除說明（已定案，啟用驗證另計）
 
-營運者為HUANG，聯絡信箱413637629@o365.tku.edu.tw。本服務目前為測試版，仍可能發生服務中斷。此草稿不構成法律合規保證；待下列實際設定與責任確認後才同步到App及公開政策，不把privacy-complete提前設true。
+使用者已確認由HUANG負責人工追蹤，grace_days=0、business_retention_days=0、receipt_days=30，立即停用、30天內人工清除。聯絡：413637629@o365.tku.edu.tw。這是低流量測試政策，不是法律認證或商店上架保證。
 
-## 帳號、驗證與寄信
+App與公開 `/privacy-policy` 同讀 `backend/foodsave/static/privacy-policy.json`；`/privacy` 回傳同一政策。owner參數見 `infra/erasure-policy-approved-test.json`，enabled=false僅防止誤執行真刪除，不表示政策未核准。
 
-註冊使用email，密碼只儲存加鹽scrypt雜湊，不保存可還原密碼。登入session用於驗證身分；App僅於記憶體持有登入憑證。重設及改密碼成功會撤銷原有session。請自行在App設定密碼，不透過聊天提供密碼或驗證碼。
+## 帳號與寄信
 
-驗證郵件透過Microsoft Azure Communication Services發送，供應商會處理收件地址、郵件內容及傳送所需資訊。已關閉郵件互動追蹤；這不代表供應商不保留傳送／安全紀錄。Azure worker已確認寄信資源資料位置為AsiaPacific、managed domain互動追蹤關閉；平台內部投遞／服務紀錄保存期未由目前設定揭露，仍屬未知，不能說供應商不留紀錄。Microsoft資料處理說明：https://learn.microsoft.com/en-us/azure/communication-services/concepts/privacy ，隱私權聲明：https://privacy.microsoft.com/en-us/privacystatement 。
+email、密碼雜湊及登入會話用於帳號驗證；密碼使用加鹽scrypt雜湊，不保存可還原密碼。登入憑證只留App記憶體。重設或改密碼成功會撤銷原有登入。請自行在App設定密碼，不在聊天提供密碼或驗證碼。
 
-一次性碼15分鐘內有效，資料庫只保存碼與email衍生的雜湊及期限。重送使舊碼失效。失效與物理清除不同：新請求會有限量補清舊過期資料，owner人工工具也能每次最多清100筆過期challenge；目前沒有自動清除排程，因此不承諾第15分鐘立即刪除。
+驗證郵件使用Microsoft Azure Communication Services，供應商處理收件地址、郵件內容及傳送所需資訊；寄信資源資料位置為AsiaPacific，互動追蹤已關閉。平台內部投遞／安全／服務紀錄的保存期限未由目前設定揭露，不代表供應商不保留紀錄。
 
-為限制暴力嘗試與寄信成本，系統保存email／帳號／共用入口等衍生限流識別與計數。這些雜湊不是無法關聯的匿名資料。仍有效的安全計數不因刪帳而重設；限流窗口結束後，營運者按刪除申請人工補清該email的過期限流識別。全站成本計數不含單一申請人的專屬身份，不藉刪帳清零。一次性寄信測試防重計數屬單獨已核准測試控制，不以刪帳重新取得寄送名額；其後處置需在該測試結束後另核對，不假稱已全部匿名化。
+## 驗證碼與安全計數
 
-## 既有功能與資料流
+一次性碼15分鐘有效，資料庫保存碼與email衍生的雜湊及期限；再次寄信使舊碼失效。失效不等於立即物理刪除。系統於新請求有限量補清舊過期資料，營運者也以人工工具有限量補清；目前沒有自動清除排程。
 
-預約、收藏、評論、獎勵及操作紀錄用於既有功能；測試版不因此增加新資料用途。商家刪帳／過期預約仍須完成既有顧客通知與訂單處理，不能直接刪庫跳過通知。定位、相機、全家公開查詢、地圖／照片外部來源的資料流沿用目前App已列說明，不新增追蹤或廣告用途。
+防濫用限流使用email／帳號／共用入口衍生識別與計數；雜湊不代表不可關聯。刪帳不重設尚有效的安全計數，營運者待窗口結束後按原申請補清該email識別。共用全站成本配額及已核准單次寄信測試防重控制不因刪帳清零，不把處理中的安全紀錄誤稱已完全清除。
 
-## 刪除流程：立即停用，30天內處理
+## 既有服務資料
 
-App或公開帳號頁可提出刪除；確認身分並受理後立即停用帳號、撤銷登入。受理不等於所有副本已清除。HUANG須追蹤請求，以既有owner權限人工處理，最遲30天內完成可識別個資清除及必要後續；目前未宣稱自動清除已部署。
+預約、收藏、評論、EXP與獎勵紀錄用於服務及避免重複發放；操作紀錄用於管理與問題追查。未整合廣告、付款或推播SDK。裝置只保留未完成操作的隨機識別碼與內容雜湊；照片HTTPS來源可能接收IP與請求資訊。
 
-依使用者已要求全部刪除，本測試版不另創業務保留理由；建議owner政策business_retention_days=0，無待處理訂單及必要通知完成後，依既有兩階段工具完成清PII及業務資料刪除。不能只執行第一階段就宣稱整體完成。清除收據需定案有限保存期限；它只證明應用SQL範圍，不證明雲端備份／日誌／外部來源已清除。
+## 定位、相機與外部服務
 
-schema012增量已加入：刪除該email的challenge、清驗信時間、清已過期email限流識別；其他使用者資料、全站配額、尚未到期防濫用計數不受影響。若仍有有效email計數，營運者須在窗口後按同一刪除申請補清，才完成該部分處理，不能把第一階段回覆當完整刪除證明。
+定位需授權，用於裝置上的附近篩選，不把定位歷程寫入FoodSave資料庫。商家點選掃碼取貨才請求相機；影像只在裝置解碼，不上傳保存、不錄音，核對、離頁或切到背景即停止相機。隨機取貨憑證送後端核對，不含姓名電話。
 
-## 定案前須確認的最小項目
+全家手動查詢傳送所選公開地區中心座標；附近查詢須另行同意將裝置座標傳給全家，再請求系統定位權限。取消或拒絕可手選；附近位置與結果僅留本頁記憶體，離頁清除，不寫FoodSave資料庫或裝置儲存、不傳FoodSave登入憑證。公開門市／商品按地區在裝置快取30分鐘，失敗不代表零庫存。來源可能收到一般連線資訊。開地圖會向OpenStreetMap底圖連線，步行導航連Google Maps；7-ELEVEN庫存整合尚未完成。
 
-1. HUANG承接人工追蹤／至少定期檢查及30天上限；確認grace_days（建議0）、business_retention_days=0與有限receipt_days。這是明確營運參數，不用虛構測試期保留需求。
-2. Azure worker只讀確認：SQL短期備份保存7天、差異備份間隔12小時，weekly/monthly/yearly LTR均PT0S，immutabilityDisabled。營運資料刪除不會立即從既存備份移除；應依備份生命週期到期，不能把7天寫成刪帳後立刻完成或全供應商紀錄保存期。App Service application file/blob logging Off、HTTP file/blob false、detailed errors/failed tracing false，HTTP file retention days為null，不能解讀為0天。App／ACS Azure Monitor diagnostic settings為空，表示未配置匯出目的地，不表示無平台內部紀錄；EmailServices診斷查詢ResourceTypeNotSupported也不是無紀錄證據。本次不改任何備份／日誌設定。
-3. 備份復原後，先重新套用已受理刪除／停用結果再提供服務；實際備份到期及日誌處理責任須列明。
-4. owner012增量在合成資料執行rollback QA並零殘留，確認人工刪除與補清模式。不得藉驗收執行真人資料刪除、改grant或新建排程。
-5. 定案後才更新App文案、公開政策及privacy-complete；公開註冊開啟與使用者本人驗信／登入／重設另行驗收。私人APK測試不以商店申報完成為前提。
+## 刪除與人工責任
+
+刪帳受理後立即停用並撤銷登入，由HUANG追蹤並於30天內人工完成清除；訂單與通知處理完後不額外保留業務資料，清除處理紀錄保留30天。SQL備份依現有7天週期到期，寄信供應商內部紀錄期限未由目前設定揭露。
+
+在個人中心申請刪帳並確認密碼，或使用公開帳號刪除頁；無法操作時聯絡HUANG完成身分核對。受理不等於全部清除。HUANG負責追蹤請求、執行既有兩階段清除與到期補清，不宣稱有自動排程。
+
+處理商家刪帳與過期訂單時，先完成既有顧客通知及訂單處理；不新增業務保留需求。清理包括帳號驗證資料、本人challenge與已過期限流識別，不以刪帳重設全站配額。清除紀錄僅證明應用資料庫範圍，不代表供應商／備份副本同時清除。
+
+## 備份與日誌
+
+部署端已確認SQL短期備份保存7天、差異備份間隔12小時，未設定每週／每月／每年長期保留備份；不可變備份未啟用。刪除營運資料不會立刻移除既存備份，依備份生命週期到期。若復原備份，HUANG須先重新套用已受理的停用／刪除結果，再提供服務。
+
+App Service應用與HTTP檔案／blob日誌、詳細錯誤及失敗追蹤未啟用；App與ACS未設定Azure Monitor診斷匯出目的地。這不等於平台完全無紀錄；HTTP保留天數為null也不是0天保證。寄信服務內部紀錄期限未知，依Microsoft適用資料處理說明。
+
+## 測試範圍
+
+本政策已由HUANG定案，適用低流量公開測試，不代表正式商店上架或所有功能已全面驗收。註冊可用性以App向後端即時查詢為準；真實驗信、登入與重設仍由使用者本人完成。寄信量與服務可用性受全站配額及限時授權影響。
+
+## 本輪開啟條件
+
+1. Azure以固定tracked QA完成合成資料rollback且三表零殘留；不以本機fake測試代替。
+2. 部署本輪固定runtime包，核對公開`/privacy-policy`與`/privacy`版本、HUANG/contact/retention內容；既有FOODSAVE_RETENTION_SUMMARY若仍是舊文案，需同步成canonical summary。
+3. 沿用已批准MI、配額與共用入口限流設定，保持Azure Students spending limit；USD1提醒不是硬上限。
+4. 由部署端於實際啟用時設定FOODSAVE_MAIL_AUTHORIZED_UNTIL為明確UTC時間，距設定時刻不超過24小時；保留既有MAIL_APPROVED及已核對ACS設定。不可直接複用過期deadline。
+5. 在上述驗證完成後，按既有授權核對並開啟FOODSAVE_PRIVACY_POLICY_COMPLETE、FOODSAVE_ACCOUNT_LIFECYCLE_ENABLED及FOODSAVE_REGISTRATION_ENABLED；回讀`/auth/options`確認可用。私人APK已採live模式，依即時後端判定；不需要把APK編譯時privacyReady當作新的開放程序。
+6. 使用者本人在私人APK完成註冊驗信、登入及重設；未完成前不宣稱真實端到端驗收。
+
+本輪不建立排程、不真刪除、不修改備份或grant、不自行翻線上開關。
+
+### 部署端已回報的實證
+
+Azure worker於2026-10-03 17:40:03 UTC以4951b295固定QA完成真SQL合成資料rollback：19 checks PASS、errors=[]、exit0；三個獨立連線查本批users/account_challenges/rate_limits均為0，manifest0600、私有目錄0700。涵蓋本人email/UUID範圍、900秒過期、安全有效計數保留與savepoint；沒有執行真人清除。此為部署端回報，不是本機重跑或真人刪除／完整端到端證據。

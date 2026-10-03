@@ -7,8 +7,8 @@ android {
         applicationId providers.gradleProperty("foodsaveApplicationId").getOrElse("tw.foodsave.demo")
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 6
-        versionName "0.4.0-auth-test"
+        versionCode 7
+        versionName "0.4.1-policy-test"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

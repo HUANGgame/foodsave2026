@@ -1,7 +1,7 @@
 'use strict';
 const form=document.getElementById('account-form'),status=document.getElementById('status');
 let busy=false;
-fetch('/privacy',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error();return r.json();}).then(p=>{document.getElementById('privacy').textContent=p.status==='configured'?`營運者：${p.operator}。聯絡：${p.contact}。保存說明：${p.retention}`:'營運者聯絡及保存政策尚待確認；此系統尚未完成公開營運準備。';}).catch(()=>{document.getElementById('privacy').textContent='說明暫時無法載入，請稍後重試。';});
+fetch('/privacy',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error();return r.json();}).then(p=>{document.getElementById('privacy').textContent=p.status==='configured'?`營運者：${p.operator}。聯絡：${p.contact}。保存說明：${p.retention}`:`已定案測試政策，啟用檢查尚未完成。營運者：${p.operator}。聯絡：${p.contact}。保存說明：${p.retention}`;}).catch(()=>{document.getElementById('privacy').textContent='說明暫時無法載入，請稍後重試。';});
 form.addEventListener('submit',async event=>{event.preventDefault();if(busy)return;const action=event.submitter.value,fields=new FormData(form);if(action==='submit'&&!form.elements.confirm.checked){status.textContent='請先勾選確認刪除申請。';return;}
  busy=true;for(const button of form.querySelectorAll('button'))button.disabled=true;
  const body={email:String(fields.get('email')),password:String(fields.get('password'))};if(action==='submit')body.confirm='DELETE';

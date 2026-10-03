@@ -1,4 +1,6 @@
 import os
+import json
+from html import escape
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -6,7 +8,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from .admin import AdminService
@@ -89,12 +91,26 @@ def live():
 
 @app.get('/privacy')
 def privacy():
-    defaults = {'operator': 'HUANG', 'contact': '413637629@o365.tku.edu.tw', 'retention': '刪帳申請受理後立即停用登入，30天內清除可識別個資。必要業務紀錄另列保留原因與期限，不默默永久保存。'}
+    policy=json.loads((Path(__file__).parent/'static'/'privacy-policy.json').read_text())
+    defaults = {'operator': 'HUANG', 'contact': '413637629@o365.tku.edu.tw', 'retention': policy['summary']}
     fields = {name: os.getenv(variable) or defaults[name] for name, variable in {
         'operator': 'FOODSAVE_OPERATOR_NAME', 'contact': 'FOODSAVE_PRIVACY_CONTACT',
         'retention': 'FOODSAVE_RETENTION_SUMMARY'}.items()}
     return {**fields, 'status': 'configured' if all(fields.values()) and os.getenv('FOODSAVE_PRIVACY_POLICY_COMPLETE') == 'true' else 'draft',
-            'deletion_page': '/account', 'request_is_erasure': False}
+            'deletion_page': '/account', 'request_is_erasure': False,'policy':policy,'policy_page':'/privacy-policy'}
+
+
+@app.get('/privacy-policy',response_class=HTMLResponse)
+def privacy_policy_page():
+    data=privacy();policy=data['policy']
+    content='<h1>FoodSave 隱私與帳號刪除說明</h1><p>已定案的低流量測試政策；開放狀態以App即時檢查為準。</p>'
+    content+='<p>營運者：'+escape(data['operator'])+'；聯絡：'+escape(data['contact'])+'</p>'
+    for section in policy['sections']:
+        content+='<h2>'+escape(section['title'])+'</h2>'
+        content+=''.join('<p>'+escape(p)+'</p>' for p in section['paragraphs'])
+    content+=''.join('<p><a href="'+escape(link['url'],quote=True)+'" rel="noreferrer">'+escape(link['label'])+'</a></p>' for link in policy['links'])
+    content+='<p><a href="/account">提出或查詢刪除申請</a></p>'
+    return '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FoodSave 隱私說明</title><link rel="stylesheet" href="/admin.css"></head><body><main>'+content+'</main></body></html>'
 
 
 @app.post('/admin/maintenance')

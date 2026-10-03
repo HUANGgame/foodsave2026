@@ -1,0 +1,8 @@
+{
+  "version": "foodsave-test-20261003-v1",
+  "grace_days": 0,
+  "business_retention_days": 0,
+  "receipt_days": 30,
+  "external_procedure": "HUANG追蹤刪除請求，立即停用、30天內人工清除；完成訂單與顧客通知後不額外保留業務資料，有效安全計數到期後補清。SQL短期備份7天、無LTR；復原後先重套刪除及停用結果。未啟用App/ACS診斷匯出不代表無平台紀錄，ACS內部期限未知，依Microsoft資料處理說明。",
+  "enabled": false
+}
