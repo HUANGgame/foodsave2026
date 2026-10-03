@@ -39,7 +39,6 @@ class AccountService(Service):
         return {'detail':GENERIC}
 
     def finish(self, email, purpose, code, password):
-        encoded=hash_password(password)
         with self.transaction() as c:
             lock_email(c,email)
             ticket=one(c,'SELECT token_hash FROM dbo.account_challenges WITH(UPDLOCK,HOLDLOCK) WHERE token_hash=:token AND email_key=:e AND purpose=:purpose AND expires_at>SYSUTCDATETIME()',token=challenge_key(purpose,email,code),e=email_key(email),purpose=purpose)
@@ -49,10 +48,12 @@ class AccountService(Service):
             if purpose=='register':
                 if user:
                     fail(400,INVALID)
+                encoded=hash_password(password)
                 execute(c,"INSERT dbo.users(id,email,password_hash,role,email_verified_at) VALUES(:id,:email,:password,'consumer',SYSUTCDATETIME())",id=uid(),email=email,password=encoded)
             elif purpose=='reset':
                 if not user or not user['active']:
                     fail(400,INVALID)
+                encoded=hash_password(password)
                 result=one(c,'EXEC dbo.apply_account_password @user_id=:u,@expected_hash=:old,@new_hash=:new,@verify_email=1',u=user['id'],old=user['password_hash'],new=encoded)
                 if not result or result['changed']!=1:
                     fail(400,INVALID)
@@ -63,7 +64,6 @@ class AccountService(Service):
         return {'detail':'已完成。請使用新密碼重新登入。','sessions_revoked':True}
 
     def change_password(self, user, token, current_password, password):
-        encoded=hash_password(password)
         with self.transaction() as c:
             lock_email(c,user['email'])
             current=one(c,'SELECT id,email,password_hash,active FROM dbo.users WITH(UPDLOCK,HOLDLOCK) WHERE id=:u',u=user['id'])
@@ -74,6 +74,7 @@ class AccountService(Service):
                 fail(401,'身分確認失敗，請重新登入')
             if password==current_password or password.casefold()==current['email'].casefold():
                 fail(422,'請選擇不同的新密碼')
+            encoded=hash_password(password)
             result=one(c,'EXEC dbo.apply_account_password @user_id=:u,@expected_hash=:old,@new_hash=:new,@verify_email=0',u=user['id'],old=current['password_hash'],new=encoded)
             if not result or result['changed']!=1:
                 fail(401,'身分確認失敗，請重新登入')

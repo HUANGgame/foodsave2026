@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
@@ -156,7 +157,15 @@ def account_quota(svc, request, email, action, sending=False):
     if sending:
         svc.throttle('auth:mail:global:minute','all',limit=5,window_seconds=60)
         svc.throttle('auth:mail:global:hour','all',limit=10,window_seconds=3600)
-        svc.throttle('auth:mail:global:day','all',limit=80,window_seconds=86400)
+        svc.throttle('auth:mail:global:day','all',limit=30,window_seconds=86400)
+        svc.throttle('auth:mail:global:month',datetime.now(timezone.utc).strftime('%Y-%m'),limit=1000,window_seconds=2678400)
+    else:
+        password_quota(svc)
+
+
+def password_quota(svc):
+    # Shared SQL budget across instances; one admission can verify and rehash.
+    svc.throttle('auth:password:global','all',20,60)
 
 
 @app.exception_handler(MailUnavailable)
@@ -213,6 +222,7 @@ def reset_password(body:S.FinishAccount,request:Request,svc:AccountSvc):
 def change_password(body:S.ChangePassword,user:User,svc:AccountSvc,value=Depends(token)):
     lifecycle_enabled()
     svc.throttle('auth:change',user['id'],limit=5,window_seconds=900)
+    password_quota(svc)
     return svc.change_password(user,value,body.current_password,body.password)
 
 
@@ -220,6 +230,7 @@ def change_password(body:S.ChangePassword,user:User,svc:AccountSvc,value=Depends
 def login(body:S.Credentials,request:Request,svc:Svc):
     svc.throttle('login',request.client.host if request.client else 'unknown')
     svc.throttle('login:email',body.email)
+    password_quota(svc)
     return svc.login(body.email,body.password)
 
 

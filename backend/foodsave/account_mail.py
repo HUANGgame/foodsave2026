@@ -1,10 +1,14 @@
 """Server-only SMTP/TLS adapter. No console mailer, token logging or production test mode."""
 import os
+import json
+from datetime import datetime,timezone,timedelta
 import re
 import smtplib
 import ssl
 from email.message import EmailMessage
 from threading import BoundedSemaphore
+from pydantic import ValidationError
+from .schemas import EmailRequest
 
 
 class MailUnavailable(Exception):
@@ -14,8 +18,32 @@ class MailUnavailable(Exception):
 _SLOTS = BoundedSemaphore(2)
 
 
+def authorization():
+    try:
+        until=datetime.fromisoformat(os.getenv('FOODSAVE_MAIL_AUTHORIZED_UNTIL','').replace('Z','+00:00'))
+        now=datetime.now(timezone.utc)
+        valid=until.tzinfo is not None and now<until<=now+timedelta(hours=24)
+    except ValueError:
+        valid=False
+    if os.getenv('FOODSAVE_MAIL_APPROVED')!='true' or not valid:
+        raise MailUnavailable()
+
+
+def validate_recipient(email):
+    try:
+        EmailRequest(email=email)
+    except ValidationError:
+        raise MailUnavailable() from None
+
+
+def bounded_message(payload):
+    if len(payload)>4096:
+        raise MailUnavailable()
+
+
 class SmtpAccountMail:
     def __init__(self):
+        authorization()
         self.host=os.getenv('FOODSAVE_SMTP_HOST','')
         self.port=os.getenv('FOODSAVE_SMTP_PORT','465')
         self.sender=os.getenv('FOODSAVE_MAIL_FROM','')
@@ -28,6 +56,8 @@ class SmtpAccountMail:
             raise MailUnavailable()
 
     def send_code(self, email, purpose, code):
+        authorization()
+        validate_recipient(email)
         if purpose not in ('register','reset') or not re.fullmatch(r'[A-Za-z0-9_-]{43}',code):
             raise MailUnavailable()
         message=EmailMessage()
@@ -36,6 +66,7 @@ class SmtpAccountMail:
         message.set_content('請回到 FoodSave App，貼上以下一次性驗證碼，再自行設定密碼。\n'
                             '有效期15分鐘；再次要求寄信會使前一封失效。不要分享驗證碼或密碼。\n\n'+code+
                             '\n\n若不是你提出的要求，請忽略此信。此郵件不確認該信箱是否已有帳號。')
+        bounded_message(message.as_bytes())
         if not _SLOTS.acquire(timeout=1):
             raise MailUnavailable()
         try:
@@ -49,6 +80,7 @@ class SmtpAccountMail:
                 if self.port=='587':
                     smtp.starttls(context=context);smtp.ehlo()
                 smtp.login(self.username,self.password)
+                authorization()
                 if smtp.send_message(message):
                     raise MailUnavailable()
         except Exception:
@@ -65,21 +97,17 @@ class AcsAccountMail:
     thread, provider retry queue, tracking pixel, application retry or token log.
     """
     def __init__(self):
-        from datetime import datetime,timezone,timedelta
+        authorization()
         self.endpoint=os.getenv('FOODSAVE_ACS_EMAIL_ENDPOINT','').rstrip('/')
         self.sender=os.getenv('FOODSAVE_MAIL_FROM','')
-        try:
-            until=datetime.fromisoformat(os.getenv('FOODSAVE_MAIL_AUTHORIZED_UNTIL','').replace('Z','+00:00'))
-            now=datetime.now(timezone.utc)
-            valid=until.tzinfo is not None and now<until<=now+timedelta(hours=24)
-        except ValueError:
-            valid=False
-        if (os.getenv('FOODSAVE_MAIL_APPROVED')!='true' or not valid or
+        if (os.getenv('FOODSAVE_MAIL_APPROVED')!='true' or
             not re.fullmatch(r'https://[A-Za-z0-9-]+\.communication\.azure\.com',self.endpoint) or
             not re.fullmatch(r'[A-Za-z0-9._+%-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}',self.sender)):
             raise MailUnavailable()
 
     def send_code(self,email,purpose,code):
+        authorization()
+        validate_recipient(email)
         if purpose not in ('register','reset') or not re.fullmatch(r'[A-Za-z0-9_-]{43}',code):
             raise MailUnavailable()
         if not _SLOTS.acquire(timeout=1):
@@ -90,13 +118,16 @@ class AcsAccountMail:
             # Only the existing system-assigned App Service identity is used.
             with ManagedIdentityCredential(retry_total=0,connection_timeout=3,read_timeout=5) as credential:
                 with EmailClient(self.endpoint,credential,retry_total=0,connection_timeout=3,read_timeout=8,logging_enable=False) as client:
-                    result=client.begin_send({
+                    message={
                         'senderAddress':self.sender,
                         'recipients':{'to':[{'address':email}]},
                         'content':{'subject':'FoodSave 食在可惜｜'+('信箱驗證' if purpose=='register' else '重設密碼'),
                                    'plainText':'請回到FoodSave App貼上一次性驗證碼，再自行設定密碼。有效期15分鐘；重送使舊碼失效。勿分享驗證碼或密碼。\n\n'+code+'\n\n非本人操作請忽略；此信不確認是否已有帳號。'},
                         'userEngagementTrackingDisabled':True,
-                    },polling=False,logging_enable=False).result()
+                    }
+                    bounded_message(json.dumps(message,ensure_ascii=False).encode('utf-8'))
+                    authorization()
+                    result=client.begin_send(message,polling=False,logging_enable=False).result()
                     if not result or result.get('status') not in ('Running','Succeeded'):
                         raise MailUnavailable()
         except Exception:

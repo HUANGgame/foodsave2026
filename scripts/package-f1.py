@@ -7,7 +7,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / 'backend'
 OUT = ROOT / 'artifacts'
-RUNTIME = ['__init__','api','admin','db','diagnose','ranking','schemas','security','service']
+RUNTIME = ['__init__','accounts','account_mail','api','admin','db','diagnose','ranking','schemas','security','service']
 OWNER = ['__init__','admin','db','ranking','schemas','security','service','migrate','cli','erasure']
 
 

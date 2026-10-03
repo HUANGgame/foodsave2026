@@ -1,7 +1,7 @@
 """In-memory transaction/API safety contracts. NOT SQL Server or real SMTP evidence."""
 from contextlib import contextmanager
 from copy import deepcopy
-from datetime import datetime,timedelta
+from datetime import datetime,timedelta,timezone
 import base64
 import hashlib
 import secrets
@@ -252,7 +252,7 @@ def test_smtp_requires_explicit_approval_tls_and_rejects_provider_failure(monkey
     import foodsave.account_mail as module
     monkeypatch.delenv('FOODSAVE_MAIL_APPROVED',raising=False)
     with pytest.raises(MailUnavailable):SmtpAccountMail()
-    settings={'FOODSAVE_MAIL_APPROVED':'true','FOODSAVE_SMTP_HOST':'smtp.example.test','FOODSAVE_SMTP_PORT':'587','FOODSAVE_MAIL_FROM':'noreply@example.test','FOODSAVE_SMTP_USER':'test-only','FOODSAVE_SMTP_PASSWORD':secrets.token_urlsafe(24)}
+    settings={'FOODSAVE_MAIL_APPROVED':'true','FOODSAVE_MAIL_AUTHORIZED_UNTIL':(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat(),'FOODSAVE_SMTP_HOST':'smtp.example.test','FOODSAVE_SMTP_PORT':'587','FOODSAVE_MAIL_FROM':'noreply@example.test','FOODSAVE_SMTP_USER':'test-only','FOODSAVE_SMTP_PASSWORD':secrets.token_urlsafe(24)}
     for k,v in settings.items():monkeypatch.setenv(k,v)
     calls=[]
     class SMTP:
@@ -356,3 +356,44 @@ def test_cli_invalid_password_does_not_echo_secret(monkeypatch,capsys):
     monkeypatch.setattr(cli,'AdminService',NoWrite)
     with pytest.raises(SystemExit):cli.main()
     captured=capsys.readouterr();assert private not in captured.err+captured.out
+
+
+def test_invalid_ticket_does_not_perform_password_hash(lifecycle,monkeypatch):
+    svc,db,mail=lifecycle
+    def expensive(*args):raise AssertionError('Invalid ticket reached scrypt')
+    monkeypatch.setattr(accounts,'hash_password',expensive)
+    with pytest.raises(HTTPException) as exc:
+        svc.finish(EMAIL,'reset',secrets.token_urlsafe(32),PASSWORD)
+    assert exc.value.status_code==400
+
+
+def test_mail_bound_and_expired_authorization_before_send(monkeypatch):
+    from foodsave.account_mail import AcsAccountMail,bounded_message
+    monkeypatch.setenv('FOODSAVE_MAIL_APPROVED','true')
+    monkeypatch.setenv('FOODSAVE_MAIL_AUTHORIZED_UNTIL',(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat())
+    monkeypatch.setenv('FOODSAVE_ACS_EMAIL_ENDPOINT','https://fixture.communication.azure.com')
+    monkeypatch.setenv('FOODSAVE_MAIL_FROM','noreply@example.test')
+    mail=AcsAccountMail()
+    monkeypatch.setenv('FOODSAVE_MAIL_AUTHORIZED_UNTIL',(datetime.now(timezone.utc)-timedelta(seconds=1)).isoformat())
+    with pytest.raises(MailUnavailable):mail.send_code(EMAIL,'reset',secrets.token_urlsafe(32))
+    with pytest.raises(MailUnavailable):bounded_message(b'x'*4097)
+
+
+def test_shared_password_and_mail_budgets():
+    from types import SimpleNamespace
+    calls=[]
+    svc=SimpleNamespace(throttle=lambda *args,**kwargs:calls.append((args,kwargs)))
+    request=SimpleNamespace(client=SimpleNamespace(host='fixture'))
+    api_module.account_quota(svc,request,EMAIL,'mail',sending=True)
+    quotas={args[0]:kwargs.get('limit') for args,kwargs in calls}
+    assert quotas['auth:mail:global:hour']==10 and quotas['auth:mail:global:day']==30 and quotas['auth:mail:global:month']==1000
+    calls.clear();api_module.account_quota(svc,request,EMAIL,'finish')
+    assert (('auth:password:global','all',20,60),{}) in calls
+
+
+def test_mail_recipient_uses_same_email_contract():
+    from foodsave.account_mail import validate_recipient
+    for address in ("o'connor@example.com",'a!b=c@example.com'):
+        assert EmailRequest(email=address).email==address
+        validate_recipient(address)
+    with pytest.raises(MailUnavailable):validate_recipient('victim@example.com\r\nBcc:other@example.com')
