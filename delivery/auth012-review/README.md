@@ -23,3 +23,8 @@ Use `infra/account-lifecycle-settings.example.json`. Keep lifecycle=false, regis
 ## Rollback
 
 Disable registration/lifecycle/mail-approved; retain new hashes and additive schema. `backend/rollback/012_account_lifecycle.review.sql` is a conditional owner-only destructive down review, NOT the routine test script; refuses when changes/challenges exist. Never restore old passwords/sessions or deploy a backend unable to read scrypt-v2. Nothing in this handoff authorizes extra grants/resources or automatically enables registration.
+
+
+## Owner-only auth erasure increment
+
+Owner ZIP now source1e9948472fe167b5bff53bbc25bbd174be4d47d3, includes auth012 cleanup and qa/auth_erasure_rollback.py. This introduces NO migration or grant; do not rerun migrations or deploy this archive as the API. Run QA plan first and only run synthetic rollback with reviewed existing-owner scope. See docs/AUTH012_ERASURE_REVIEW.md and docs/TEST_PRIVACY_DRAFT.md. Runtime ZIP remains byte-identical to6bbb698; public flags and APK privacy copy remain unchanged pending policy approval.
