@@ -2,7 +2,7 @@
 
 這是程式與mock驗證，**不是正式環境全部驗收通過**。
 
-本階段：33個後端單元／API mock、10個前端單元、6個App browser合同通過；新增公開帳號頁的browser mock也通過。涵蓋刪除重試／查詢、確認勾選、密碼欄清除、跨用戶取消拒絕、角色限制、登入世代隔離與抽獎重試。未執行真SQL資料變更。
+前一階段：33個後端單元／API mock、10個前端單元、6個App browser合同通過；新增公開帳號頁的browser mock也通過。涵蓋刪除重試／查詢、確認勾選、密碼欄清除、跨用戶取消拒絕、角色限制、登入世代隔離與抽獎重試。未執行真SQL資料變更。
 
 ## 已修正
 
@@ -22,13 +22,13 @@
 
 | 範圍 | 已有證據 | 真正验收狀態 |
 |---|---|---|
-| UI／四分頁／照片／地圖 | 靜態建置、browser合同與demo回歸紀錄 | GPS允許／拒絕與地圖互動未完成Android驗收 |
+| UI／四分頁／照片／地圖 | 靜態建置、browser合同與demo回歸紀錄 | GPS拒絕／逾時／不可用及返回商品有browser mock；Android未驗 |
 | 登入／角色／session | 單元與API mock拒絕測試、前端session隔離 | 真DB登入、跨裝置、代理節流未驗 |
 | 商品／預約／取消／核銷 | 前後端合同、快照單元、程式交易鎖 | SQL最後庫存並發、取消核銷競爭、重啟一致性未驗 |
 | 收藏／評論／EXP | 原demo邏輯與API程式／部分mock | 真DB唯一事件、彙總、營運EXP值未驗／待決策 |
 | 週排行 | 台北週界單元、可重入結算程式 | 真DB結算重跑、有效期／同分規則批准待辦 |
 | 轉盤／獎品 | mock重試一次扣除、關閉恢復、減少動畫與落點檢查 | 真SQL次數／獎品交易、真獎品履約、Android FPS未驗 |
-| 刪除帳號 | 受理／停用／查詢／返還程式與mock | 最終抹除／保留例外／備份清除流程尚未實作；政策待批准 |
+| 刪除帳號 | 受理／停用／查詢／返還程式與mock | owner分階段SQL清除工具已開發、預設停用；真SQL、政策與外部清除未驗 |
 | 隱私與公開註冊 | 草案頁／配置接口／未配置拒絕註冊 | 真營運資料、公開政策及Data safety未完成 |
 | 管理／DB查看 | 本地HTTP與browser mock、白名單／角色程式 | Azure部署未驗、viewer未批准；可先由owner用SQL Portal |
 | Azure SQL／migration | SQL檔及owner工具已寫、未連真DB | 執行環境網路准入／owner路徑受阻；migration和GRANT未執行 |
@@ -36,4 +36,12 @@
 | APK／AAB | API36編譯、debug簽章／unsigned、manifest／ZIP／bundletool | 產物為.test合同配置；未實機安裝，不是發布版 |
 | ER／手冊 | 與現有migration／程式對照 | 尚未以真環境從頭操作驗證 |
 
-結論：可以交接可審查程式與部署材料，不能聲稱其他項目全部驗收或production ready。未新增費用、權限或資料庫schema，未觸碰其他資料庫。
+結論：可以交接可審查程式與部署材料，不能聲稱其他項目全部驗收或production ready。未新增費用或權限，未觸碰其他資料庫。前階段未改schema，本次004僅寫入migration檔，尚未套用。
+
+## 刪除工具階段增量
+
+新增 owner-only `erasure.py` / `owner_erase.py`、004 migration（店家 owner_id 可空、申請審查／清除時間、有限期回執），詳見 [ERASURE_RUNBOOK.md](ERASURE_RUNBOOK.md)。runtime ZIP內容不變，003 readiness與既有最小權限不变；部署084版本不需為這個owner工具重部署。新owner ZIP會含004，勿在未審查時假設已套用。沒有呼叫Azure刪除。
+
+本輪新增交易替身測試：預設關閉、逐案審查、dry-run零寫入、有限期限、政策版本、等待訂單阻擋、兩階段、FK順序、重試與失敗回滾。GPS拒絕／不可用／逾時提示及評論返回有browser mock。完整個資抹除仍需外部副本和自由文字人工審查；不得把程式測試標成正式驗收。
+
+驗證結果：48後端單元／交易替身、10前端單元、9App browser mock通過，Next静態建置成功；pytest有1項Starlette/httpx棄用警告。未重建APK，既有APK不含本輪GPS變更。

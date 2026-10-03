@@ -39,3 +39,5 @@ python3 -m venv .venv
 - [操作手冊](docs/OPERATIONS_DRAFT.md)、[架構與ER](docs/ARCHITECTURE.md)、[正式驗收矩陣](docs/ACCEPTANCE_MATRIX.md)。
 
 目前驗證分為單元／API mock、瀏覽器mock合同與建置檢查；不等於真SQL或Android測試。部署前由擁有者配置專用DB與最小權限。GitHub分支保存開發成果，main不自動合併。
+
+分階段刪除工具（預設停用，未在真SQL執行）與004 migration見 [刪除執行手冊](docs/ERASURE_RUNBOOK.md)；不需要擴大runtime權限。

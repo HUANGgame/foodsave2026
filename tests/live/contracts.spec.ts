@@ -67,3 +67,14 @@ test('vendor API form loads after login and sends matching product contract',asy
  await page.route('https://api.foodsave.test/vendor/products',r=>{submitted=r.request().postDataJSON();return r.fulfill({status:201,json:{id:productId,revision:1}});});
  await page.goto('/vendor/');await login(page);await page.getByLabel('商品名稱',{exact:true}).fill('測試便當');await page.getByLabel('已授權商品照片網址').fill('https://images.example.test/food.jpg');await page.getByLabel('原價（元）').fill('100');await page.getByLabel('惜食價（元）').fill('50');await page.getByLabel('可預約庫存').fill('2');await page.getByLabel('領取截止').fill('2027-01-01T12:00');await page.getByRole('button',{name:'儲存商品'}).click();await expect(page.getByText('商品已儲存')).toBeVisible();expect(submitted).toMatchObject({store_id:store,original_price_minor:10000,sale_price_minor:5000,available_quantity:2,active:true,revision:1});expect(submitted.pickup_deadline).toMatch(/Z$/);
 });
+
+for(const code of [1,2,3])test(`GPS error ${code} keeps actual API list and review return works`,async({page})=>{
+ await page.addInitScript(code=>{Object.defineProperty(navigator,'geolocation',{value:{getCurrentPosition:(_ok:unknown,fail:(v:unknown)=>void)=>fail({code})}});},code);
+ await fixture(page);await page.goto('/');await login(page);
+ await page.getByRole('button',{name:'使用目前位置'}).click();
+ await expect(page.getByText(code===1?/未允許定位/:code===3?/定位逾時/:/目前無法取得位置/)).toBeVisible();
+ await expect(page.getByRole('heading',{name:'真API契約測試商品'})).toBeVisible();
+ await page.getByRole('button',{name:/則評論/}).click();await expect(page.getByText('mock評論',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'返回商品'}).click();await expect(page.getByRole('heading',{name:'真API契約測試商品'})).toBeVisible();
+ expect(await page.evaluate(()=>localStorage.getItem('foodsave-demo-v1'))).toBeNull();
+});

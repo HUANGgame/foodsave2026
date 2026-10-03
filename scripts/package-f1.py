@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / 'backend'
 OUT = ROOT / 'artifacts'
 RUNTIME = ['__init__','api','admin','db','diagnose','ranking','schemas','security','service']
-OWNER = ['__init__','admin','db','ranking','schemas','security','service','migrate','cli']
+OWNER = ['__init__','admin','db','ranking','schemas','security','service','migrate','cli','erasure']
 
 
 def package(name, paths):
@@ -32,7 +32,7 @@ def main():
     runtime = [BACKEND/'requirements.txt', BACKEND/'startup.sh']
     runtime += [BACKEND/'foodsave'/f'{name}.py' for name in RUNTIME]
     runtime += list((BACKEND/'foodsave'/'static').glob('*'))
-    owner = [BACKEND/'requirements.txt', BACKEND/'owner_migrate.py']
+    owner = [BACKEND/'requirements.txt', BACKEND/'owner_migrate.py', BACKEND/'owner_erase.py']
     owner += [BACKEND/'foodsave'/f'{name}.py' for name in OWNER]
     owner += list((BACKEND/'migrations').glob('*.sql'))
     result = [package('foodsave-f1-code.zip', runtime), package('foodsave-owner-migrations.zip', owner)]

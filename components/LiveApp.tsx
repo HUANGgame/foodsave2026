@@ -21,7 +21,14 @@ export default function LiveApp({screen}:{screen:string}){
  useEffect(()=>{alive.current=true;if(api.authenticated&&!liveConfigurationError)act(refresh);return()=>{alive.current=false;};},[]);
  useEffect(()=>{if(!selected||!user)return;let current=true;api.request<typeof reviews>(`/stores/${selected}/reviews`).then(r=>{if(current)setReviews(r);}).catch(error);return()=>{current=false;};},[selected,user?.id]);
  useEffect(()=>{const visible=()=>{if(document.visibilityState==='visible'&&api.authenticated&&!lock.current)act(refresh);};document.addEventListener('visibilitychange',visible);return()=>document.removeEventListener('visibilitychange',visible);},[act]);
- async function locate(){await act(async()=>{if(Capacitor.isNativePlatform())await Geolocation.requestPermissions();const p=Capacitor.isNativePlatform()?await Geolocation.getCurrentPosition({enableHighAccuracy:true,timeout:10000}):await new Promise<GeolocationPosition>((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{timeout:10000}));setCenter([p.coords.latitude,p.coords.longitude]);});}
+ async function locate(){await act(async()=>{try{
+  const native=Capacitor.isNativePlatform();
+  if(native){const permission=await Geolocation.requestPermissions();if(permission.location!=='granted'&&permission.coarseLocation!=='granted')throw {code:1};}
+  if(!native&&!navigator.geolocation)throw {code:2};
+  const p=native?await Geolocation.getCurrentPosition({enableHighAccuracy:true,timeout:10000}):await new Promise<GeolocationPosition>((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{timeout:10000}));
+  setCenter([p.coords.latitude,p.coords.longitude]);
+ }catch(e){setCenter(null);const code=(e as {code?:number|string})?.code;throw new Error(code===1||code==='OS-PLUG-GLOC-0003'?'未允許定位。可到裝置設定開啟權限，仍可瀏覽店家清單。':code===3||code==='OS-PLUG-GLOC-0010'?'定位逾時，請稍後重試；仍可瀏覽店家清單。':'目前無法取得位置，請檢查裝置定位服務；仍可瀏覽店家清單。');}});}
+
  const stores=Array.from(new Set(products.map(p=>p.store_id))).map(id=>{const p=products.find(p=>p.store_id===id)!;return {id,name:p.store_name,lat:Number(p.latitude),lng:Number(p.longitude),count:products.filter(p=>p.store_id===id&&p.available_quantity>0).length};});
  const visible=stores.filter(s=>(screen!=='favorites'||favorites.includes(s.id))&&(!center||distance(...center,s.lat,s.lng)<=radius));
  const selectedStore=visible.find(s=>s.id===selected)||visible[0];

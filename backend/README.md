@@ -64,3 +64,5 @@ python -m pytest -q
 追加API：GET /prizes、/favorites、/stores/{id}/reviews、/vendor/catalog，以及POST /account/deletion-requests（202受理／停用，不是假稱完成抹除）。公開註冊預設關閉，營運與隱私資料批准後才設定FOODSAVE_REGISTRATION_ENABLED=true。
 
 安全補強：新增公開 `/account` 刪除／查詢頁、POST /account/deletion-request（需DELETE確認）、POST /account/deletion-status（皆需本人帳密）、GET /privacy。runtime新增deletion_requests的SELECT需求；schema不變。公開註冊還要求FOODSAVE_OPERATOR_NAME／FOODSAVE_PRIVACY_CONTACT／FOODSAVE_RETENTION_SUMMARY均已設定。最終資料抹除仍未實作。
+
+分階段刪除工具（預設停用，未在真SQL執行）與004 migration見 [刪除執行手冊](../docs/ERASURE_RUNBOOK.md)；不需要擴大runtime權限。

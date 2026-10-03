@@ -1,6 +1,6 @@
 # 系統與資料表關係（目前程式）
 
-來源：backend/migrations/001_core.sql、002_rankings.sql、003_deletion_requests.sql。圖反映已寫入程式的schema，**尚未在Azure SQL套用驗證**，不代表已部署或正式完成。複合主鍵、唯一性及CHECK完整條件以migration為準；以下關係線為FK概觀。
+來源：backend/migrations/001_core.sql、002_rankings.sql、003_deletion_requests.sql、004_erasure.sql。圖反映已寫入程式的schema，**尚未在Azure SQL套用驗證**，不代表已部署或正式完成。複合主鍵、唯一性及CHECK完整條件以migration為準；以下關係線為FK概觀。
 
 ```mermaid
 flowchart TD
@@ -22,7 +22,7 @@ flowchart TD
 ```mermaid
 erDiagram
   users ||--o{ sessions : "user_id"
-  users ||--o{ stores : "owner_id"
+  users |o--o{ stores : "owner_id"
   stores ||--o{ products : "store_id"
   users ||--o{ reservations : "user_id"
   products ||--o{ reservations : "product_id"
@@ -189,9 +189,19 @@ erDiagram
     varchar state
     datetime2 requested_at
     datetime2 completed_at
+    bit approved_for_erasure
+    datetime2 pii_cleared_at
+    datetime2 purge_after
+    varchar policy_version
+  }
+  erasure_receipts {
+    varchar request_id
+    varchar policy_version
+    datetime2 completed_at
+    datetime2 expires_at
   }
 ```
 
 另有migration runner建立的schema_migrations(version, applied_at)。request_results保存冪等操作結果；預約取貨碼只向本人API回傳，DB viewer不公開它。ranking_rules與exp_rules為配置表，以程式套用，不捏造不存在的FK。rate_limits為匿名雜湊bucket，不儲存原始IP。
 
-安全補強沒有修改schema；deletion_requests現在由經本人帳密驗證的狀態API讀取，刪除受理會取消本人waiting預約。最終抹除與備份刪除仍未實作。
+004新增owner清除狀態及無user FK的限時回執。owner工具預設停用；清除前公開狀態可用原密碼，清除密碼後由owner依回執協助。真SQL清除與外部备份流程未驗證，詳見ERASURE_RUNBOOK。
