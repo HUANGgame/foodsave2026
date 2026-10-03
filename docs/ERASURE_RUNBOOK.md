@@ -30,3 +30,5 @@ owner ZIP 包含 `owner_erase.py`，與 `owner_migrate.py` 共用既有 Azure CL
 SQL 備份、還原副本、匯出、部署／存取記錄、外部圖片或客服資料不在此工具內。營運者需設定到期清除與還原後重新套用刪除的程序；未完成不得標示「完整抹除」。程式每次明確回傳 `external_erasure_verified: false`。無公開回執查詢端點，避免帳號／申請列舉。
 
 測試用交易替身只證明控制流程與 SQL 呼叫計畫；真SQL最後庫存競爭／參照完整性、大資料量、還原後重做、Android 都仍待驗收。未新增付費服務、排程、身份或權限。
+
+005增量：runtime透過僅含request_id/user_id參數的submit_deletion_request程序提交，固定未批准；既有同交易鎖／撤銷邏輯維持。批准與真正清除工具仍owner-only，005不批准任何帳號清除。

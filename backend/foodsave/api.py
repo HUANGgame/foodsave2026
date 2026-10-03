@@ -107,7 +107,7 @@ def ready(svc: Svc):
     for attempt in range(2):
         try:
             with svc.transaction() as c:
-                found = one(c, "SELECT version FROM dbo.schema_migrations WHERE version='003_deletion_requests.sql'")
+                found = one(c, "SELECT version FROM dbo.schema_migrations WHERE version='005_deletion_request_procedure.sql'")
                 if not found:
                     raise HTTPException(503, '資料庫尚未初始化')
             return {'status': 'ready'}

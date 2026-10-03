@@ -345,6 +345,18 @@ def test_deletion_rechecks_waiting_orders_before_returning_inventory(monkeypatch
     result=svc.request_deletion(USER,PASSWORD)
     inventory=[params for sql,params in calls if 'UPDATE dbo.products' in sql]
     assert inventory==[{'q':2,'p':'p1'}]
-    assert sum('INSERT INTO dbo.deletion_requests' in sql for sql,p in calls)==1
+    assert sum('EXEC dbo.submit_deletion_request' in sql for sql,p in calls)==1
     assert any('DELETE FROM dbo.sessions' in sql for sql,p in calls)
     assert result['state']=='requested'
+
+
+@pytest.mark.parametrize('field,value', [('approved_for_erasure', True), ('state', 'completed'), ('pii_cleared_at', '2026-01-01'), ('purge_after', '2026-01-01'), ('policy_version', 'attacker'), ('completed_at', '2026-01-01')])
+def test_deletion_rejects_owner_fields(client, field, value):
+    class RejectWrites(AuthOnly):
+        def throttle(self, *args): pass
+        def request_deletion(self, *args): pytest.fail('Unexpected write')
+        def deletion_with_credentials(self, *args, **kwargs): pytest.fail('Unexpected write')
+    app.dependency_overrides[service] = lambda: RejectWrites()
+    body = {'password': PASSWORD, 'confirm': 'DELETE', field: value}
+    assert client.post('/account/deletion-requests', headers={'Authorization':f'Bearer {SESSION}'}, json=body).status_code == 422
+    assert client.post('/account/deletion-request', json={**body,'email':'member@example.test'}).status_code == 422

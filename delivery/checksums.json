@@ -1,8 +1,8 @@
 [
   {
     "file": "foodsave-f1-code.zip",
-    "bytes": 24280,
-    "sha256": "c9776ef471df2a1a494e4a30e385a5db6f0428cb0121c7e096e712afb6bb1fd8",
+    "bytes": 24302,
+    "sha256": "12421f2bb7d7371402457327675ebcbccab04a710bebb4cf2bc341cf3032b8a8",
     "entries": [
       "foodsave/__init__.py",
       "foodsave/admin.py",
@@ -24,8 +24,8 @@
   },
   {
     "file": "foodsave-owner-migrations.zip",
-    "bytes": 21958,
-    "sha256": "388ec192a74538dcb33c9b153d74cc5587856ed892041ece451c1db880062b96",
+    "bytes": 22610,
+    "sha256": "395be8c2a1eb565dd8e3d9e942c6a211e0021003f8c5623d1961998309cdbd3f",
     "entries": [
       "foodsave/__init__.py",
       "foodsave/admin.py",
@@ -41,6 +41,7 @@
       "migrations/002_rankings.sql",
       "migrations/003_deletion_requests.sql",
       "migrations/004_erasure.sql",
+      "migrations/005_deletion_request_procedure.sql",
       "owner_erase.py",
       "owner_migrate.py",
       "requirements.txt"

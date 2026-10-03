@@ -49,3 +49,5 @@
 Android CI追加：標準ubuntu-24.04首次run 37101823813失敗（KVM預設讀寫權限不足），未sudo擴權、未SDK授權、未build/install/launch。最小一次性ACL提案待使用者確認，詳見ANDROID_CI.md；未增加Azure/DB權限或變更部署包。
 
 真Azure SQL驗收發現002的inline CHECK跨欄位造成8141；已改為表級 `ck_ranking_rules_range CHECK(end_rank>=start_rank)`。檢查001–004其餘CHECK未發現同類inline跨欄位問題，新增静態結構回歸（包含舊錯誤必須被偵測）。這不是SQL編譯測試；owner須確認前次交易rollback並重跑migration，不能因001曾印Applied就認定已提交。runtime ZIP未變。
+
+005已批准的申請程序隔離：API只傳兩個UUID；程序強制未批准且owner時間空值。runtime新增單一procedure EXECUTE、基表INSERT仍拒絕。62後端測試通過（API拒絕惡意owner欄位、既有重試／交易mock、程序／grant靜態檢查）；真SQL权限与迁移未驗。Android第4run整體failure：build/sign/install/Activity成功，WebView偵測逾時，三角色UI未執行；詳見ANDROID_CI。

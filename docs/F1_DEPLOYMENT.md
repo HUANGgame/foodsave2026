@@ -5,7 +5,7 @@
 ## 可交給部署步驟的檔案
 
 - `artifacts/foodsave-f1-code.zip`：requirements.txt與startup.sh在ZIP根目錄，僅包含API／admin／必要模組。沒有migration、Dockerfile、App測試輸出、.env、秘密或.test API設定。
-- `artifacts/foodsave-owner-migrations.zip`：獨立migration 001/002/003與owner_migrate.py、CLI；不放進App Service。hash／檔案清單見`artifacts/f1-package-verification.json`。
+- `artifacts/foodsave-owner-migrations.zip`：獨立migration 001–005與owner_migrate.py、CLI；不放進App Service。hash／檔案清單見`artifacts/f1-package-verification.json`。
 - 重建：`python3 scripts/package-f1.py`。未上傳Library或交付使用者測試包。
 
 ## App Service設定提案
@@ -46,7 +46,7 @@ python owner_migrate.py --server YOUR_VERIFIED_SERVER.database.windows.net --dat
 
 ## 部署後必要驗收
 
-先`/health/live`（不碰DB），私有driver診斷，owner migrations，再`/health/ready`（檢查003）。不以頻繁SQL readiness探針維持DB清醒。驗runtime不能DDL、viewer不能寫／讀敏感欄位；最後庫存並發、抽獎重試、週結算重跑、App跨帳號、Android啟動仍待實測。未有actualhost時不改APK網址，也不交付fixture APK。
+先`/health/live`（不碰DB），私有driver診斷，owner migrations，再`/health/ready`（新版檢查005）。不以頻繁SQL readiness探針維持DB清醒。驗runtime不能DDL、viewer不能寫／讀敏感欄位；最後庫存並發、抽獎重試、週結算重跑、App跨帳號、Android啟動仍待實測。未有actualhost時不改APK網址，也不交付fixture APK。
 
 ## 已收到的F1資源（部署負責人核實，尚未部署程式）
 
@@ -62,3 +62,5 @@ WebApp `YOUR_APP`，RG `YOUR_RESOURCE_GROUP`，F1 Python3.12 Linux。實際HTTPS
 Repository根目錄是Next.js，Python的requirements在backend；不能只改startup就假定Oryx會正確偵測Python。Kudu官方歷史文件提供`.deployment`的`project=子目錄`，但其文件例子針對Node/PHP/ASP.NET，不足以證明目前F1 Linux Python3.12/Oryx路徑已驗證：https://github.com/projectkudu/kudu/wiki/Customizing-deployments
 
 此外backend目錄含owner_migrate.py與migrations，與已過濾的runtime ZIP不同。若部署負責人確認External Git路徑可用，應明確確認建置根目錄、部署輸出內容及startup工作目錄；保留owner工具隔離。這輪不盲目新增.deployment、不觸發部署。ZIP扁平根目錄的`sh startup.sh`不能未驗證就套用整個repo根目錄。
+
+005交接：owner先套用005，再依已批准的runtime身分審查infra/sqlserver/runtime-grant-005.review.sql，最後部署新的runtime ZIP。新增唯一dbo.submit_deletion_request EXECUTE；禁止基表INSERT及owner欄位存取，不可授schema廣泛EXECUTE。舊084 runtime與此API呼叫不同，必須更新；未在本工作區套用任何grant。

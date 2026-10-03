@@ -228,7 +228,7 @@ class Service:
             # Disable access now; retain an auditable request until the approved
             # retention/erasure job is implemented, never claim completed erasure.
             identity = uid()
-            execute(c, 'INSERT INTO dbo.deletion_requests(id,user_id) VALUES(:id,:u)', id=identity, u=user['id'])
+            execute(c, 'EXEC dbo.submit_deletion_request @request_id=:id,@user_id=:u', id=identity, u=user['id'])
             execute(c, 'UPDATE dbo.users SET active=0 WHERE id=:u', u=user['id'])
             execute(c, 'DELETE FROM dbo.sessions WHERE user_id=:u', u=user['id'])
             if user['role'] == 'vendor':

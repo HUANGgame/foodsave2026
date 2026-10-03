@@ -25,7 +25,7 @@ python3 -m venv .venv
 .venv/bin/uvicorn foodsave.api:app --host 127.0.0.1 --port 8000 --no-proxy-headers
 ```
 
-Migration在同一交易內執行，版本表記錄001/002/003；啟動web不自動改schema。`/health/live`不連DB；`/health/ready`檢查最新migration。Azure休眠恢復40613只有readiness做最多一次1秒後重試；寫入遇資料庫錯誤回503與Retry-After，不自動重跑副作用。連線池5+5、連線逾時10秒、pool_recycle300秒，沒有keepalive背景查詢。生產readiness若密集查DB可能影響休眠，部署時應改用不持續喚醒DB的策略並驗證；不得以健康檢查刻意維持DB常醒。
+Migration在同一交易內執行，版本表記錄001–005；啟動web不自動改schema。`/health/live`不連DB；`/health/ready`檢查最新migration。Azure休眠恢復40613只有readiness做最多一次1秒後重試；寫入遇資料庫錯誤回503與Retry-After，不自動重跑副作用。SQLAlchemy NullPool且關閉pyodbc pooling、連線逾時10秒，沒有keepalive背景查詢。生產readiness若密集查DB可能影響休眠，部署時應改用不持續喚醒DB的策略並驗證；不得以健康檢查刻意維持DB常醒。
 
 管理頁 `/admin`：登入後可看白名單資料、建立店家／獎品／手動次數，以及EXP設定。Session只保存在頁面記憶體，重新載入需重登入；伺服器存token雜湊，12小時到期，登出撤銷。表格以textContent顯示；不顯示密碼hash／session／取貨或券碼；伺服器每次檢查admin角色。沒有外部公開連結，未部署。
 
@@ -66,3 +66,5 @@ python -m pytest -q
 安全補強：新增公開 `/account` 刪除／查詢頁、POST /account/deletion-request（需DELETE確認）、POST /account/deletion-status（皆需本人帳密）、GET /privacy。runtime新增deletion_requests的SELECT需求；schema不變。公開註冊還要求FOODSAVE_OPERATOR_NAME／FOODSAVE_PRIVACY_CONTACT／FOODSAVE_RETENTION_SUMMARY均已設定。最終資料抹除仍未實作。
 
 分階段刪除工具（預設停用，未在真SQL執行）與004 migration見 [刪除執行手冊](../docs/ERASURE_RUNBOOK.md)；不需要擴大runtime權限。
+
+005安全隔離：刪除申請改呼叫dbo.submit_deletion_request，runtime僅獲該程序EXECUTE，底層申請表不授INSERT/UPDATE/DELETE，批准欄位不授SELECT。新runtime readiness要求005；部署／精確grant差異見infra/sqlserver的審查模板。62後端單元／mock／靜態測試通過，不代替真SQL權限驗證。
