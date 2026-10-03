@@ -1,6 +1,16 @@
-# Schema011 新版 checkpoint（未部署）
+## 部署端確認：schema011 真SQL與回滾QA（2026-10-03）
 
-本段覆蓋舊版狀態，後文保留歷史證據。A/B已實作於source：007–011通知/終態/有限刪除程序，帳號收藏及revision介面；完整精確scope见[SQL011安全審查](SQL011_SECURITY_REVIEW.md)。實際MI與Application ID不進公開repo。沒有執行新GRANT、migration、真人刪除或部署。
+父流程回報：owner已完成006–011實際T-SQL compile/commit；限定runtime權限盤點76→96，role memberships仍0；runtime部署成功，private readiness=ready，registration=false、privacy=draft。實際資源及deployment識別碼只留私有交接，不公開。
+
+使用受限MI執行e60a362版本terminal_rollback.py，41 assertions全部PASS，synthetic資料rollback後zero residual。涵蓋到期一次結算／實體刪單、缺貨release0／晚到重試、vendor closure通知去重／範圍檢查等。這是部署端提供的真SQL證據，不是本workspace再次執行；不能視為HTTP/TLS/CORS或Android連真API通過。
+
+尚未測：通知INSERT失敗注入的SQL rollback、schema011相向雙連線競爭、public/deployed HTTP及Android實連線、實機相機。新Android fixture證據另見ANDROID_SCHEMA011_CHECKPOINT.md。先前migration007 SQL102已修復並經部署端此次compile確認；不得把舊失敗紀錄改成從未發生。
+
+---
+
+# 部署前Schema011 checkpoint（歷史）
+
+以下保留部署前狀態，以文件最上方部署端確認為準。A/B已實作於source：007–011通知/終態/有限刪除程序，帳號收藏及revision介面；完整精確scope见[SQL011安全審查](SQL011_SECURITY_REVIEW.md)。實際MI與Application ID不進公開repo。沒有執行新GRANT、migration、真人刪除或部署。
 
 本輪最後build通過、TypeScript通過、前端12單元、後端132單元/結構測試、browser20 fixture通過，git diff --check通過；最後stock-loss更新時間來源補入查詢後另跑後端回歸。負向涵蓋actor payload拒絕、inbox/terminal scope、time/reason/idempotency、程序grant範圍及outer rollback。不是新SQL的編譯或鎖行為證明。秘密/PII掃描本輪變更無發現，保留批准HUANG/413637629@o365.tku.edu.tw與保留域synthetic資料。
 

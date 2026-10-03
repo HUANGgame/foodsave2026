@@ -1,4 +1,14 @@
-# 兩階段實作 checkpoint：schema011，未部署
+## 部署端確認：schema011 真SQL與回滾QA（2026-10-03）
+
+父流程回報：owner已完成006–011實際T-SQL compile/commit；限定runtime權限盤點76→96，role memberships仍0；runtime部署成功，private readiness=ready，registration=false、privacy=draft。實際資源及deployment識別碼只留私有交接，不公開。
+
+使用受限MI執行e60a362版本terminal_rollback.py，41 assertions全部PASS，synthetic資料rollback後zero residual。涵蓋到期一次結算／實體刪單、缺貨release0／晚到重試、vendor closure通知去重／範圍檢查等。這是部署端提供的真SQL證據，不是本workspace再次執行；不能視為HTTP/TLS/CORS或Android連真API通過。
+
+尚未測：通知INSERT失敗注入的SQL rollback、schema011相向雙連線競爭、public/deployed HTTP及Android實連線、實機相機。新Android fixture證據另見ANDROID_SCHEMA011_CHECKPOINT.md。先前migration007 SQL102已修復並經部署端此次compile確認；不得把舊失敗紀錄改成從未發生。
+
+---
+
+# 兩階段部署前實作 checkpoint（歷史；最新結果見上方）
 
 以最新使用者規則為準。A資料層及B介面已寫入本次source；新SQL尚未套用／驗證。既有delivery根目錄7824868套件仍保留，新版只置於schema011-review子目錄待審查。不能將舊schema005的SQL成功證據套用到本版。
 

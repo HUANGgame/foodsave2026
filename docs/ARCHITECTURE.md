@@ -1,6 +1,6 @@
 # 系統與資料表關係（目前程式）
 
-來源：migration001–011。本圖是新版source設計：部署端先前確認001–005，006–011尚未套用或真SQL驗證。精確權限與ownership-chain邊界見SQL011_SECURITY_REVIEW.md。
+來源：migration001–011。本圖是新版source設計：部署端先前確認001–005，父流程現已確認006–011真SQL套用及41項rollback QA通過。精確權限與ownership-chain邊界見SQL011_SECURITY_REVIEW.md。
 
 ```mermaid
 flowchart TD
@@ -17,7 +17,7 @@ flowchart TD
  App --> Photo[已授權HTTPS圖片來源]
 ```
 
-正式模式API失敗不切回demo。登入token只在記憶體；裝置只保存未完成操作識別碼與內容雜湊。後端token存hash，會話12小時；刪除申請立即停用帳號／撤銷session，但資料抹除仍待營運流程。新版schema011及新增權限尚未套用。
+正式模式API失敗不切回demo。登入token只在記憶體；裝置只保存未完成操作識別碼與內容雜湊。後端token存hash，會話12小時；刪除申請立即停用帳號／撤銷session，但資料抹除仍待營運流程。父流程已確認schema011及限定新增權限套用；App實連線尚未驗收。
 
 ```mermaid
 erDiagram

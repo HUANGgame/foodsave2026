@@ -89,3 +89,11 @@ PYTHONPATH=. python qa/terminal_rollback.py --execute --approved-quiet-window --
 覆蓋time/state拒絕、owner/pending mismatch、缺貨release0、late cancel/expiry、原key恢復、通知scope、顧客followers去重、關店實體刪除及rollback。direct Service＋real SQL，不是HTTP或Android證據。通知失敗注入及雙連線競態尚未涵蓋；本地僅驗plan/拒絕未核准執行/錯誤preflight要求rollback。
 
 舊`pickup_rollback.py`固定7824868/schema005的證據與使用方式保留；**不可將README舊文的「or later」解讀成已兼容schema011**。本輪store預設及expired終態已變，舊腳本尚未移植，應用新terminal腳本驗本輪，完整QR SQL重驗仍待修訂。新檔必須與本輪backend一起使用，不能放進舊owner ZIP假裝已升級。
+
+## 部署端確認：schema011 真SQL與回滾QA（2026-10-03）
+
+父流程回報：owner已完成006–011實際T-SQL compile/commit；限定runtime權限盤點76→96，role memberships仍0；runtime部署成功，private readiness=ready，registration=false、privacy=draft。實際資源及deployment識別碼只留私有交接，不公開。
+
+使用受限MI執行e60a362版本terminal_rollback.py，41 assertions全部PASS，synthetic資料rollback後zero residual。涵蓋到期一次結算／實體刪單、缺貨release0／晚到重試、vendor closure通知去重／範圍檢查等。這是部署端提供的真SQL證據，不是本workspace再次執行；不能視為HTTP/TLS/CORS或Android連真API通過。
+
+尚未測：通知INSERT失敗注入的SQL rollback、schema011相向雙連線競爭、public/deployed HTTP及Android實連線、實機相機。新Android fixture證據另見../../docs/ANDROID_SCHEMA011_CHECKPOINT.md。先前migration007 SQL102已修復並經部署端此次compile確認；不得把舊失敗紀錄改成從未發生。

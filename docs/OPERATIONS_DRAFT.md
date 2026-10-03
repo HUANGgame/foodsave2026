@@ -79,3 +79,9 @@ App串真API及服務／DB重啟驗收、管理員與viewer身分、公開HTTPS�
 - 店家刪帳移除其店／商品／訂單並通知顧客／followers；這不等於完成帳號PII及外部備份抹除。
 
 以上僅source已實作，須schema006–011及受審查權限，不能對舊005後端操作。新套件review-only，owner清理仍預設停用。實際套用前見SQL011_SECURITY_REVIEW及MODE_AND_DELETION_PLAN。
+
+## 尚未實作的首次店家入駐（清單，不擴充）
+
+目前既有owner CLI可受控建立vendor帳號，admin建立／指派店家；consumer不能自行升成vendor，006限制一vendor至多一store。App遇未分配店家僅提示聯絡管理者。
+
+尚缺：商家申請入口、身分／店家資料審核、核准與拒絕通知、首次登入設定店名／位置與資料校對、入駐進度顯示及首批商品引導。尚未定義店家移轉、多人管理或多分店授權；這些不在本次兩階段或Android fixture範圍，不以測試帳號代替真實入駐驗收。
