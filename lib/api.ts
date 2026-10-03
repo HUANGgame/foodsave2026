@@ -6,23 +6,26 @@ export type Order={id:string;product_id:string;state:string;quantity:number;snap
 export class ApiError extends Error {constructor(public status:number,message:string){super(message);}}
 export function utc(value:string){return new Date(/[zZ]|[+-]\d\d:\d\d$/.test(value)?value:value+'Z');}
 export class FoodApi {
- private token='';private identity='';
+ private token='';private identity='';private generation=0;
  constructor(readonly base:string){}
  get authenticated(){return Boolean(this.token);}
  hasPending(operation:string){try{return Boolean(this.identity&&localStorage.getItem(`foodsave-pending-v1:${this.identity}:${operation}`));}catch{return false;}}
- clear(){this.token='';this.identity='';}
+ clear(){this.token='';this.identity='';this.generation++;}
  async request<T>(path:string,method='GET',body?:unknown,key?:string):Promise<T>{
+  const generation=this.generation;
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
   try{const response=await fetch(this.base+path,{method,signal:controller.signal,cache:'no-store',headers:{'Content-Type':'application/json',...(this.token?{Authorization:`Bearer ${this.token}`} : {}),...(key?{'Idempotency-Key':key}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});
-   const data=await response.json();if(!response.ok){if(response.status===401)this.clear();throw new ApiError(response.status,data.detail||'服務暫時無法使用');}return data as T;
+   const data=await response.json();if(generation!==this.generation)throw new ApiError(401,'登入狀態已變更，先前操作的結果不會套用到新帳號。');if(!response.ok){if(response.status===401)this.clear();throw new ApiError(response.status,data.detail||'服務暫時無法使用');}return data as T;
   }catch(error){if(error instanceof ApiError)throw error;throw new ApiError(0,'連線未完成。請檢查網路後重試；未確認的操作會沿用原識別碼。');}finally{clearTimeout(timer);}
  }
- async login(email:string,password:string){const session=await this.request<{access_token:string}>('/auth/login','POST',{email,password});this.token=session.access_token;try{const me=await this.request<Account>('/me');this.identity=me.id;return me;}catch(e){this.clear();throw e;}}
+ async login(email:string,password:string){this.clear();const session=await this.request<{access_token:string}>('/auth/login','POST',{email,password});this.token=session.access_token;const generation=++this.generation;try{const me=await this.request<Account>('/me');this.identity=me.id;return me;}catch(e){if(generation===this.generation)this.clear();throw e;}}
  async logout(){await this.request('/auth/logout','POST',{});this.clear();}
  async mutate<T>(operation:string,path:string,body:unknown,method='POST'):Promise<T>{
   if(!this.identity)throw new ApiError(401,'請先登入');
+  const generation=this.generation;
   const storageKey=`foodsave-pending-v1:${this.identity}:${operation}`;
   const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({path,method,body})));
+  if(generation!==this.generation)throw new ApiError(401,'登入狀態已變更，操作尚未送出。');
   const fingerprint=Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
   let intent:{key:string;fingerprint:string};
   try{const old=localStorage.getItem(storageKey);intent=old?JSON.parse(old):{key:crypto.randomUUID(),fingerprint};if(intent.fingerprint!==fingerprint)throw new ApiError(409,'上一筆操作尚未確認，請先重試相同內容。');localStorage.setItem(storageKey,JSON.stringify(intent));}

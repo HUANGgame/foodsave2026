@@ -82,6 +82,15 @@ def live():
     return {'status': 'alive'}
 
 
+@app.get('/privacy')
+def privacy():
+    fields = {name: os.getenv(variable, '') for name, variable in {
+        'operator': 'FOODSAVE_OPERATOR_NAME', 'contact': 'FOODSAVE_PRIVACY_CONTACT',
+        'retention': 'FOODSAVE_RETENTION_SUMMARY'}.items()}
+    return {**fields, 'status': 'configured' if all(fields.values()) else 'draft',
+            'deletion_page': '/account', 'request_is_erasure': False}
+
+
 @app.post('/admin/maintenance')
 def maintenance(user: User, svc: Svc):
     require(user, 'admin')
@@ -113,7 +122,7 @@ def ready(svc: Svc):
 
 @app.post('/auth/register', status_code=201)
 def register(body: S.Credentials, request: Request, svc: Svc):
-    if os.getenv('FOODSAVE_REGISTRATION_ENABLED') != 'true':
+    if os.getenv('FOODSAVE_REGISTRATION_ENABLED') != 'true' or privacy()['status'] != 'configured':
         raise HTTPException(503, '公開註冊尚未開放')
     svc.throttle('register', request.client.host if request.client else 'unknown')
     return svc.register(body.email, body.password)  # public registration is always consumer
@@ -164,6 +173,33 @@ def catalog(user: User, svc: Svc):
 def deletion(body: S.DeleteAccount, user: User, svc: Svc):
     svc.throttle('delete', user['id'])
     return svc.request_deletion(user, body.password)
+
+
+def deletion_throttle(request, svc, email):
+    svc.throttle('deletion-public-ip', request.client.host if request.client else 'unknown')
+    svc.throttle('deletion-public-account', email)
+
+
+@app.post('/account/deletion-status')
+def deletion_status(body: S.Credentials, request: Request, svc: Svc):
+    deletion_throttle(request, svc, body.email)
+    return svc.deletion_with_credentials(body.email, body.password)
+
+
+@app.post('/account/deletion-request', status_code=202)
+def public_deletion(body: S.PublicDeleteAccount, request: Request, svc: Svc):
+    deletion_throttle(request, svc, body.email)
+    return svc.deletion_with_credentials(body.email, body.password, submit=True)
+
+
+@app.get('/account')
+def account_page():
+    return FileResponse(Path(__file__).parent / 'static' / 'account.html')
+
+
+@app.get('/account.js')
+def account_script():
+    return FileResponse(Path(__file__).parent / 'static' / 'account.js', media_type='text/javascript')
 
 
 @app.post('/reservations', status_code=201)

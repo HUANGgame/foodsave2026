@@ -193,3 +193,5 @@ erDiagram
 ```
 
 另有migration runner建立的schema_migrations(version, applied_at)。request_results保存冪等操作結果；預約取貨碼只向本人API回傳，DB viewer不公開它。ranking_rules與exp_rules為配置表，以程式套用，不捏造不存在的FK。rate_limits為匿名雜湊bucket，不儲存原始IP。
+
+安全補強沒有修改schema；deletion_requests現在由經本人帳密驗證的狀態API讀取，刪除受理會取消本人waiting預約。最終抹除與備份刪除仍未實作。

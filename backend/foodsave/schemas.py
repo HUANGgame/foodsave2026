@@ -43,6 +43,10 @@ class DeleteAccount(Strict):
     confirm: Literal['DELETE']
 
 
+class PublicDeleteAccount(Credentials):
+    confirm: Literal['DELETE']
+
+
 class Review(Strict):
     rating: int = Field(ge=1, le=5, strict=True)
     body: str = Field(min_length=1, max_length=1000)

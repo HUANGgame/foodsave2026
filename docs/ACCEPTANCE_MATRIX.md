@@ -37,3 +37,5 @@
 追加核心輪次：21個後端單元／API mock與管理頁browser mock檢查已通過；它們不滿足本表要求的真SQL／跨客戶端／Android证据，所以不把此表改標正式PASS。
 
 API串接輪次：23後端單元／mock、6 App browser合同通過；轉盤確實先收後端結果、含減少動畫與重試／關閉恢復。API36編譯成功。這些仍不滿足真SQL及Android裝置PASS要求。
+
+完整分區證據與受阻清單見 [SECURITY_REVIEW.md](SECURITY_REVIEW.md)。本階段33後端、10前端單元、6App mock合同及帳號頁browser mock通過；所有真SQL／Android要求仍不能標PASS。

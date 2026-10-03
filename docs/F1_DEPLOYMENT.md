@@ -56,3 +56,9 @@ WebApp `YOUR_APP`，RG `YOUR_RESOURCE_GROUP`，F1 Python3.12 Linux。實際HTTPS
 非秘密設定已記錄於 `infra/f1-public-config.json`，尚未寫入Azure。App前端僅待後端驗證後以此URL重建，沒有再打包.test APK。SQL建立仍待使用者條款確認。未有安全部署通路前不傳access token、publishing profile或基本帳密；ZIP只在本機，未上傳Library。
 
 本輪檢查：26項後端單元／mock通過；部署ZIP解壓後API載入、/health/live與/admin基本HTTP檢查通過。這不是Azure/ODBC/SQL驗收。
+
+## External Git子目錄部署：僅分析，尚未套用
+
+Repository根目錄是Next.js，Python的requirements在backend；不能只改startup就假定Oryx會正確偵測Python。Kudu官方歷史文件提供`.deployment`的`project=子目錄`，但其文件例子針對Node/PHP/ASP.NET，不足以證明目前F1 Linux Python3.12/Oryx路徑已驗證：https://github.com/projectkudu/kudu/wiki/Customizing-deployments
+
+此外backend目錄含owner_migrate.py與migrations，與已過濾的runtime ZIP不同。若部署負責人確認External Git路徑可用，應明確確認建置根目錄、部署輸出內容及startup工作目錄；保留owner工具隔離。這輪不盲目新增.deployment、不觸發部署。ZIP扁平根目錄的`sh startup.sh`不能未驗證就套用整個repo根目錄。

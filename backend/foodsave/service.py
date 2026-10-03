@@ -208,9 +208,23 @@ class Service:
 
     def request_deletion(self, user, password):
         with self.transaction() as c:
-            current = one(c, 'SELECT password_hash FROM dbo.users WITH(UPDLOCK,HOLDLOCK) WHERE id=:u AND active=1', u=user['id'])
+            current = one(c, 'SELECT password_hash,active FROM dbo.users WITH(UPDLOCK,HOLDLOCK) WHERE id=:u', u=user['id'])
             if not current or not verify_password(password, current['password_hash']):
                 fail(401, '請確認密碼')
+            existing = one(c, 'SELECT id,state FROM dbo.deletion_requests WHERE user_id=:u', u=user['id'])
+            if existing:
+                return {'id': existing['id'], 'state': existing['state'], 'account_disabled': not bool(current['active']), 'erasure_completed': existing['state'] == 'completed'}
+            if not current['active']:
+                fail(403, '帳號目前無法提出此申請，請聯絡營運者')
+            # Same lock order as reservation transitions. Recheck after locking:
+            # a vendor may have completed an order while this request waited.
+            pending = rows(c, "SELECT id,product_id FROM dbo.reservations WHERE user_id=:u AND state='waiting' ORDER BY product_id,id", u=user['id'])
+            for item in pending:
+                one(c, 'SELECT id FROM dbo.products WITH(UPDLOCK,HOLDLOCK) WHERE id=:p', p=item['product_id'])
+                order = one(c, "SELECT quantity FROM dbo.reservations WITH(UPDLOCK,HOLDLOCK) WHERE id=:id AND user_id=:u AND state='waiting'", id=item['id'], u=user['id'])
+                if order:
+                    execute(c, "UPDATE dbo.reservations SET state='cancelled' WHERE id=:id", id=item['id'])
+                    execute(c, 'UPDATE dbo.products SET available_quantity=available_quantity+:q,revision=revision+1 WHERE id=:p', q=order['quantity'], p=item['product_id'])
             # Disable access now; retain an auditable request until the approved
             # retention/erasure job is implemented, never claim completed erasure.
             identity = uid()
@@ -221,6 +235,20 @@ class Service:
                 execute(c, 'UPDATE p SET active=0,revision=revision+1 FROM dbo.products p JOIN dbo.stores s ON s.id=p.store_id WHERE s.owner_id=:u', u=user['id'])
             audit(c, user['id'], 'account.deletion_requested', identity)
             return {'id': identity, 'state': 'requested', 'account_disabled': True, 'erasure_completed': False}
+
+    def deletion_with_credentials(self, email, password, submit=False):
+        # No session is issued: this remains usable after a lost deletion reply
+        # has already disabled the account and revoked every existing session.
+        with self.transaction() as c:
+            user = one(c, 'SELECT id,role,password_hash,active FROM dbo.users WHERE email=:e', e=email)
+            valid = verify_password(password, user['password_hash']) if user else bool(hash_password(password)) and False
+            if not valid:
+                fail(401, '帳號或密碼不正確')
+            identity = {'id': user['id'], 'role': user['role']}
+            if not submit:
+                request = one(c, 'SELECT id,state FROM dbo.deletion_requests WHERE user_id=:u', u=user['id'])
+                return {'id': request['id'] if request else None, 'state': request['state'] if request else 'not_requested', 'account_disabled': not bool(user['active']), 'erasure_completed': bool(request and request['state'] == 'completed')}
+        return self.request_deletion(identity, password)
 
     def favorite(self, user, key, store_id, enabled):
         require(user, 'consumer')

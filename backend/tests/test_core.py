@@ -275,3 +275,76 @@ def test_managed_identity_requires_installed_driver_and_no_idle_pool(monkeypatch
     assert 'PWD=' not in db.url.query['odbc_connect']
     db.dispose()
     engine.cache_clear()
+
+
+def test_registration_cannot_override_missing_privacy_policy(client, monkeypatch):
+    monkeypatch.setenv('FOODSAVE_REGISTRATION_ENABLED', 'true')
+    monkeypatch.delenv('FOODSAVE_OPERATOR_NAME', raising=False)
+    assert client.post('/auth/register', json={'email':'new@example.test','password':PASSWORD}).status_code == 503
+    assert client.get('/privacy').json()['status'] == 'draft'
+
+
+def test_public_deletion_requires_confirmation_and_does_not_issue_session(client):
+    class PublicFake(AuthOnly):
+        def throttle(self, *args): pass
+        def deletion_with_credentials(self, email, password, submit=False):
+            assert password == PASSWORD
+            return {'id':'request','state':'requested','account_disabled':True,'erasure_completed':False}
+    app.dependency_overrides[service] = lambda: PublicFake()
+    body={'email':'member@example.test','password':PASSWORD}
+    assert client.post('/account/deletion-request', json=body).status_code == 422
+    first=client.post('/account/deletion-request', json={**body,'confirm':'DELETE'})
+    status=client.post('/account/deletion-status', json=body)
+    assert first.status_code == 202 and status.status_code == 200
+    assert first.json() == status.json()
+    assert 'access_token' not in first.text and PASSWORD not in first.text
+    assert client.get('/account').status_code == 200
+
+
+@pytest.mark.parametrize('role', ['vendor','admin'])
+def test_only_consumer_can_draw(role):
+    with pytest.raises(HTTPException) as error:
+        AuthOnly().draw({**USER,'role':role}, 'intent-key')
+    assert error.value.status_code == 403
+
+
+def test_cannot_cancel_another_users_reservation(monkeypatch):
+    svc=Service()
+    monkeypatch.setattr(svc,'mutate',lambda user,op,key,payload,action: action(None))
+    def one(c,sql,**args):
+        if 'SELECT product_id' in sql:return {'product_id':'product'}
+        if 'JOIN dbo.stores' in sql:return {'id':'product','owner_id':'vendor'}
+        return {'user_id':'another-user','pickup_code_hash':'unused'}
+    monkeypatch.setattr(operations,'one',one)
+    monkeypatch.setattr(operations,'execute',lambda *a,**k:pytest.fail('Cross-account operation must not write'))
+    with pytest.raises(HTTPException) as error:svc.transition(USER,'intent-key','order','cancelled')
+    assert error.value.status_code == 404
+
+
+def test_repeated_deletion_returns_original_without_releasing_stock_again(monkeypatch):
+    svc=Service(MemoryTransaction())
+    password_hash=hash_password(PASSWORD)
+    monkeypatch.setattr(operations,'one',lambda c,sql,**k: {'password_hash':password_hash,'active':False} if 'FROM dbo.users' in sql else {'id':'original','state':'requested'})
+    monkeypatch.setattr(operations,'execute',lambda *a,**k:pytest.fail('Repeated request must not write'))
+    result=svc.request_deletion(USER,PASSWORD)
+    assert result['id']=='original' and result['account_disabled'] is True
+    assert result['erasure_completed'] is False
+
+
+def test_deletion_rechecks_waiting_orders_before_returning_inventory(monkeypatch):
+    svc=Service(MemoryTransaction());calls=[];password_hash=hash_password(PASSWORD)
+    def one(c,sql,**args):
+        if 'FROM dbo.users' in sql:return {'password_hash':password_hash,'active':True}
+        if 'FROM dbo.deletion_requests' in sql:return None
+        if 'FROM dbo.products' in sql:return {'id':args['p']}
+        if 'FROM dbo.reservations' in sql:return {'quantity':2} if args['id']=='waiting' else None
+        raise AssertionError(sql)
+    monkeypatch.setattr(operations,'one',one)
+    monkeypatch.setattr(operations,'rows',lambda *a,**k:[{'id':'waiting','product_id':'p1'},{'id':'completed-while-waiting','product_id':'p2'}])
+    monkeypatch.setattr(operations,'execute',lambda c,sql,**args:calls.append((sql,args)))
+    result=svc.request_deletion(USER,PASSWORD)
+    inventory=[params for sql,params in calls if 'UPDATE dbo.products' in sql]
+    assert inventory==[{'q':2,'p':'p1'}]
+    assert sum('INSERT INTO dbo.deletion_requests' in sql for sql,p in calls)==1
+    assert any('DELETE FROM dbo.sessions' in sql for sql,p in calls)
+    assert result['state']=='requested'
