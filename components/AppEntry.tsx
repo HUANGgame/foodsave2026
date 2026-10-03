@@ -1,6 +1,8 @@
+import ConvenienceApp from './ConvenienceApp';
 import FoodApp from './FoodApp';
 import LiveApp from './LiveApp';
 export default function AppEntry({screen}:{screen:string}){
+ if(screen==='convenience')return <ConvenienceApp/>;
  const mode=process.env.NEXT_PUBLIC_APP_MODE||'demo';
  if(mode==='live')return <LiveApp screen={screen}/>;
  if(mode==='demo')return <FoodApp screen={screen}/>;

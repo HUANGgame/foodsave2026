@@ -13,7 +13,7 @@ import {canReserve,stockLabel} from '../lib/inventory';
 import {distance} from '../lib/geo';
 import {privacyReady} from '../lib/privacy';
 const LiveMap=dynamic(()=>import('./LiveMap'),{ssr:false});
-const tabs=[['map','探索地圖','/'],['favorites','我的收藏','/favorites/'],['missions','惜食任務','/missions/'],['profile','個人中心','/profile/']];
+const tabs=[['map','探索地圖','/'],['favorites','我的收藏','/favorites/'],['missions','惜食任務','/missions/'],['profile','個人中心','/profile/'],['convenience','超商資訊','/convenience/']];
 export default function LiveApp({screen}:{screen:string}){
  const [user,setUser]=useState<Account|null>(null),[products,setProducts]=useState<LiveProduct[]>([]),[storeRows,setStoreRows]=useState<LiveStore[]>([]),[notices,setNotices]=useState<Notice[]>([]),[favorites,setFavorites]=useState<string[]>([]),[orders,setOrders]=useState<Order[]>([]),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[signup,setSignup]=useState(false),[center,setCenter]=useState<[number,number]|null>(null),[radius,setRadius]=useState(1000),[selected,setSelected]=useState(''),[reviews,setReviews]=useState<{count:number;average:number|null;items:{rating:number;body:string}[]}|null>(null),[showReviews,setShowReviews]=useState(false),[deleting,setDeleting]=useState(false),[reserved,setReserved]=useState<Order|null>(null);
  const lock=useRef(false),alive=useRef(true);

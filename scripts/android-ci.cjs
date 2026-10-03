@@ -62,6 +62,7 @@ async function fixture(page){
   return json({detail:'Unexpected synthetic route'},500);
  });
  await page.route('https://images.example.test/**',r=>r.abort());
+ await page.route('https://tile.openstreetmap.org/**',r=>r.abort());
  async function login(as){await page.getByLabel('電子郵件').fill(as+'@example.test');await page.getByLabel('密碼（至少12字元）').fill(password);await page.getByRole('button',{name:'登入',exact:true}).click();await expect(page.getByRole('button',{name:'登入',exact:true})).toHaveCount(0);}
  return {login,pickup,token,confirmKeys,setVendorStage(value){vendorStage=value;},setMode(value){mode=value;},setZeroProducts(){showProducts=false;favorite=true;},restoreProducts(){showProducts=true;},setOfflineLogout(value){offlineLogout=value;},setExpiredPickup(){pickupState='expired';},get mode(){return mode;},get modeRequests(){return modeRequests;},get lossRequests(){return lossRequests;},get pickupPreviews(){return pickupPreviews;},get pickupConfirms(){return pickupConfirms;},get draws(){return draws;},get drawRequests(){return drawRequests;},get submitted(){return submitted;},get stock(){return stock;}};
 }
@@ -263,6 +264,25 @@ async function nativeInteractionChecks(page,mock){
   expect(await page.evaluate(()=>localStorage.getItem('foodsave-demo-v1'))).toBeNull();
   pass('Zero-spin guard, memory-only token and no demo fallback on fixture session');
 
+  // Intercept the native HTTP bridge BEFORE visiting the guest screen. This CI
+  // never contacts the real FamilyMart endpoint and does not claim live transport.
+  await page.evaluate(()=>{
+   const cap=window.Capacitor,original=cap.nativePromise.bind(cap);window.__qaFamilyCalls=0;
+   cap.nativePromise=(plugin,method,options)=>{
+    if(plugin!=='CapacitorHttp')return original(plugin,method,options);
+    if(method!=='post'||options.url!=='https://stamp.family.com.tw/api/maps/MapProductInfo'||options.data.Latitude!==25.0375197||options.data.Longitude!==121.5636704||options.data.ProjectCode!=='202106302'||options.headers.Authorization)throw Error('Unexpected native public-source contract');
+    window.__qaFamilyCalls++;
+    return Promise.resolve({status:200,headers:{},url:options.url,data:{code:1,data:[{oldPKey:'00123',name:'Android 合成全家',address:'合成契約地址',latitude:25.0375,longitude:121.5636,updateDate:'2026-10-03 19:10:01',info:[{categories:[{qty:999,products:[{code:'0001',name:'Android 合成友善便當',qty:2},{code:'0002',name:'Android 未知數量商品'}]}]}]}]}});
+   };
+  });
+  await page.getByRole('link',{name:'超商資訊',exact:true}).click();await expect(page.getByRole('heading',{name:'超商惜食資訊',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'查詢全家公開區域'}).click();await expect(page.getByRole('heading',{name:'Android 合成全家',exact:true})).toBeVisible();await expect(page.getByText('2份（來源回報）',{exact:true})).toBeVisible();await expect(page.getByText('數量未知',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'顯示公開區域地圖'}).click();await expect(page.getByLabel('附近店家地圖')).toBeVisible();await expect(page.locator('.store-marker')).toContainText('？');
+  await expect(page.getByText('折扣以門市結帳為準。')).toBeVisible();await expect(page.getByRole('button',{name:/預約|核銷|取貨/})).toHaveCount(0);
+  await page.getByRole('button',{name:'查詢全家公開區域'}).click();expect(await page.evaluate(()=>window.__qaFamilyCalls)).toBe(1);
+  await expect(page.getByRole('link',{name:'前往 OPENPOINT 官方 App'})).toHaveAttribute('href','https://play.google.com/store/apps/details?id=tw.net.pic.m.openpoint');
+  await page.getByRole('link',{name:'返回自營店家與攤販'}).click();await expect(page.getByRole('heading',{name:'附近的好食物',exact:true})).toBeVisible();
+  pass('Guest FamilyMart cards/cache/unknown quantities and 7-ELEVEN official entry; native bridge intercepted, no real source request');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   device('shell','am','force-stop','tw.foodsave.demo');
   try{await browser.close();}catch{}

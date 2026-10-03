@@ -17,3 +17,5 @@ h1,h2,h3,h4{font-weight:700}.welcome-strip{display:flex;align-items:center;justi
 
 /* Pickup flow: quiet, large controls; no transition delays between customers. */
 .merchant-actions {display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}.merchant-actions button{padding:12px 6px;min-height:52px}.pickup-big{display:block;width:100%;min-height:56px;margin:12px 0;font-size:1.15rem}.pickup-camera video{width:100%;max-height:340px;object-fit:cover;border-radius:16px;background:#18291d}.pickup-qr{display:block;max-width:100%;height:auto;margin:auto;background:#fff}.pickup-summary{font-size:1.3rem;font-weight:700}.pickup-card strong{font-size:1.3rem;overflow-wrap:anywhere}.live-form details summary{min-height:44px;padding:12px 0;cursor:pointer}.live-app button,.live-app .secondary,.live-app .primary{min-height:44px}
+
+.live-map-canvas{height:320px;min-height:320px;border-radius:16px;margin:16px 0}
