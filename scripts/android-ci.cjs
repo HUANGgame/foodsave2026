@@ -80,6 +80,31 @@ async function denyLocationDialog(){
  }
  throw Error('Expected native location permission denial control');
 }
+async function nativeProfileAfterResume(page){
+ // Diagnose frame scheduling separately from DOM/layout; do not force a DOM
+ // click or suppress navigation assertions after a real Activity lifecycle.
+ const link=page.getByRole('link',{name:'個人中心',exact:true});await expect(link).toBeVisible();
+ await page.evaluate(()=>{window.__qaFrames=0;const tick=()=>{window.__qaFrames++;if(window.__qaFrames<20)requestAnimationFrame(tick);};requestAnimationFrame(tick);});
+ const samples=[];
+ for(let i=0;i<3;i++){samples.push(await link.boundingBox());await pause(200);}
+ const state=await page.evaluate(()=>({visibility:document.visibilityState,focused:document.hasFocus(),frames:window.__qaFrames,animations:document.getAnimations().filter(a=>a.playState==='running').length}));
+ console.log('Post-resume frame/layout diagnostic',JSON.stringify({state,navBounds:samples}));
+ // Use the actual accessible native bounds and an adb touch, as a person would.
+ // A stopped renderer or broken navigation will still fail the heading check.
+ for(let attempt=0;attempt<4;attempt++){
+  let xml='';try{device('shell','rm','-f','/sdcard/foodsave-qa-nav.xml');device('shell','uiautomator','dump','/sdcard/foodsave-qa-nav.xml');xml=device('shell','cat','/sdcard/foodsave-qa-nav.xml');}catch{await pause(500);continue;}
+  const node=(xml.match(/<node[^>]*>/g)||[]).find(n=>/(?:text|content-desc)="個人中心"/.test(n)&&/enabled="true"/.test(n));
+  const b=node?.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);
+  if(b&&+b[3]>+b[1]&&+b[4]>+b[2]){
+   device('shell','input','tap',String(Math.floor((+b[1]+ +b[3])/2)),String(Math.floor((+b[2]+ +b[4])/2)));
+   await expect(page.getByRole('heading',{name:'個人中心',exact:true})).toBeVisible();
+   await expect(page).toHaveURL(/\/profile\/$/);
+   pass('Real native touch opens profile after HOME/resume; no forced DOM click or skipped navigation assertion');return;
+  }
+  await pause(500);
+ }
+ throw Error('Actual native profile navigation target unavailable after resume');
+}
 async function nativeInteractionChecks(page,mock){
  await page.getByRole('link',{name:'探索地圖',exact:true}).click();
  await page.getByRole('button',{name:'使用目前位置'}).click();
@@ -101,12 +126,14 @@ async function nativeInteractionChecks(page,mock){
  await expect.poll(()=>mock.drawRequests).toBe(1);
  await expect(page.getByText('結果已保存，正在揭曉',{exact:true})).toBeVisible();
  device('shell','input','keyevent','KEYCODE_HOME');
+ await expect.poll(()=>/topResumedActivity[^\n]*tw\.foodsave\.demo/.test(device('shell','dumpsys','activity','activities'))).toBe(false);
  device('shell','am','start','-W','-n','tw.foodsave.demo/.MainActivity');
+ await expect.poll(()=>/topResumedActivity[^\n]*tw\.foodsave\.demo/.test(device('shell','dumpsys','activity','activities'))).toBe(true);
  await expect(page.getByRole('heading',{name:'獲得 Fixture8折券'})).toBeVisible({timeout:15000});
  const landing=await page.locator('.prize-wheel').evaluate(el=>{const m=new DOMMatrix(getComputedStyle(el).transform);return (Math.atan2(m.b,m.a)*180/Math.PI+360)%360;});
  expect(landing).toBeCloseTo(210,2);expect(mock.draws.length).toBe(1);expect(mock.drawRequests).toBe(1);
  pass('Actual WebView wheel double-tap sends one draw; HOME/resume preserves result and 210-degree landing');
- await page.getByRole('link',{name:'個人中心',exact:true}).click();
+ await nativeProfileAfterResume(page);
  await page.emulateMedia({reducedMotion:'reduce'});
  await page.getByRole('link',{name:'惜食任務',exact:true}).click();
  await expect(page.getByText(mock.draws[0].coupon_code,{exact:true})).toBeVisible();
