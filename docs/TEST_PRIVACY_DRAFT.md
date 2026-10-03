@@ -49,7 +49,7 @@ App Service應用與HTTP檔案／blob日誌、詳細錯誤及失敗追蹤未啟�
 1. Azure以固定tracked QA完成合成資料rollback且三表零殘留；不以本機fake測試代替。
 2. 部署本輪固定runtime包，核對公開`/privacy-policy`與`/privacy`版本、HUANG/contact/retention內容；既有FOODSAVE_RETENTION_SUMMARY若仍是舊文案，需同步成canonical summary。
 3. 沿用已批准MI、配額與共用入口限流設定，保持Azure Students spending limit；USD1提醒不是硬上限。
-4. 由部署端於實際啟用時設定FOODSAVE_MAIL_AUTHORIZED_UNTIL為明確UTC時間，距設定時刻不超過24小時；保留既有MAIL_APPROVED及已核對ACS設定。不可直接複用過期deadline。
+4. 由部署端於實際啟用時設定FOODSAVE_MAIL_AUTHORIZED_UNTIL為明確UTC時間，距設定時刻不超過24小時；保留既有MAIL_APPROVED及已核對ACS設定。不可直接複用過期deadline。到期會拒絕新的郵件送出，不會自動把功能旗標改為false、不撤銷已發碼；既有登入／改密碼不因寄信deadline自動停用，已發驗證碼仍按原15分鐘期限失效。
 5. 在上述驗證完成後，按既有授權核對並開啟FOODSAVE_PRIVACY_POLICY_COMPLETE、FOODSAVE_ACCOUNT_LIFECYCLE_ENABLED及FOODSAVE_REGISTRATION_ENABLED；回讀`/auth/options`確認可用。私人APK已採live模式，依即時後端判定；不需要把APK編譯時privacyReady當作新的開放程序。
 6. 使用者本人在私人APK完成註冊驗信、登入及重設；未完成前不宣稱真實端到端驗收。
 
@@ -58,3 +58,5 @@ App Service應用與HTTP檔案／blob日誌、詳細錯誤及失敗追蹤未啟�
 ### 部署端已回報的實證
 
 Azure worker於2026-10-03 17:40:03 UTC以4951b295固定QA完成真SQL合成資料rollback：19 checks PASS、errors=[]、exit0；三個獨立連線查本批users/account_challenges/rate_limits均為0，manifest0600、私有目錄0700。涵蓋本人email/UUID範圍、900秒過期、安全有效計數保留與savepoint；沒有執行真人清除。此為部署端回報，不是本機重跑或真人刪除／完整端到端證據。
+
+非秘密範本 `infra/privacy-public-settings.example.json` 的後端與前端摘要均同步canonical policy；其中false是安全預設，不代表線上現況，也不應整份套用來覆蓋已核准的線上開關。
