@@ -220,7 +220,7 @@ def test_draw_response_omits_weight_and_issues_coupon_after_deductions(monkeypat
 
 def test_public_registration_requires_explicit_operator_enablement(client, monkeypatch):
     monkeypatch.delenv('FOODSAVE_REGISTRATION_ENABLED', raising=False)
-    response = client.post('/auth/register', json={'email':'new@example.test','password':PASSWORD})
+    response = client.post('/auth/register', json={'email':'new@example.test'})
     assert response.status_code == 503
 
 
@@ -280,7 +280,7 @@ def test_managed_identity_requires_installed_driver_and_no_idle_pool(monkeypatch
 def test_registration_cannot_override_missing_privacy_policy(client, monkeypatch):
     monkeypatch.setenv('FOODSAVE_REGISTRATION_ENABLED', 'true')
     monkeypatch.delenv('FOODSAVE_OPERATOR_NAME', raising=False)
-    assert client.post('/auth/register', json={'email':'new@example.test','password':PASSWORD}).status_code == 503
+    assert client.post('/auth/register', json={'email':'new@example.test'}).status_code == 503
     assert client.get('/privacy').json()['status'] == 'draft'
 
 
@@ -371,4 +371,4 @@ def test_approved_operator_does_not_open_registration_without_complete_policy(cl
     response=client.get('/privacy').json()
     assert response['operator']=='HUANG' and response['contact']=='413637629@o365.tku.edu.tw'
     assert response['status']=='draft' and response['request_is_erasure'] is False
-    assert client.post('/auth/register',json={'email':'qa@example.invalid','password':PASSWORD}).status_code==503
+    assert client.post('/auth/register',json={'email':'qa@example.invalid'}).status_code==503

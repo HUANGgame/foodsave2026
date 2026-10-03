@@ -13,6 +13,9 @@ from .db import one
 from . import schemas as S
 from .ranking import RankingService
 from .service import require
+from .accounts import AccountService
+from .account_mail import configured_mailer, MailUnavailable
+from .security import PasswordCapacityError
 
 app = FastAPI(title='FoodSave API', version='0.2.0-core', docs_url=None, redoc_url=None, openapi_url=None)
 origins = [x.strip() for x in os.getenv('FOODSAVE_ALLOWED_ORIGINS', '').split(',') if x.strip()]
@@ -74,7 +77,8 @@ async def conflict(request, exc):
 async def unavailable(request, exc):
     # Includes deadlock victim/connection recovery; no automatic mutation replay.
     # Client must retry the original operation with its original idempotency key.
-    return JSONResponse(status_code=503, headers={'Retry-After': '20'}, content={'detail': '資料服務暫時無法使用，請保留原重試識別碼後重試'})
+    detail='帳號操作結果尚未確認；若剛提交新密碼，請先嘗試新密碼登入。' if request.url.path.startswith('/auth/') else '資料服務暫時無法使用，請保留原重試識別碼後重試'
+    return JSONResponse(status_code=503, headers={'Retry-After': '20'}, content={'detail':detail})
 
 
 @app.get('/health/live')
@@ -108,7 +112,8 @@ def ready(svc: Svc):
     for attempt in range(2):
         try:
             with svc.transaction() as c:
-                found = one(c, "SELECT version FROM dbo.schema_migrations WHERE version='011_mark_notification_read.sql'")
+                version="012_account_lifecycle.sql" if os.getenv("FOODSAVE_ACCOUNT_LIFECYCLE_ENABLED")=="true" else "011_mark_notification_read.sql"
+                found = one(c, "SELECT version FROM dbo.schema_migrations WHERE version=:version",version=version)
                 if not found:
                     raise HTTPException(503, '資料庫尚未初始化')
             return {'status': 'ready'}
@@ -121,18 +126,101 @@ def ready(svc: Svc):
             raise HTTPException(503, '資料庫尚未配置')
 
 
-@app.post('/auth/register', status_code=201)
-def register(body: S.Credentials, request: Request, svc: Svc):
-    if os.getenv('FOODSAVE_REGISTRATION_ENABLED') != 'true' or privacy()['status'] != 'configured':
-        raise HTTPException(503, '公開註冊尚未開放')
-    svc.throttle('register', request.client.host if request.client else 'unknown')
-    return svc.register(body.email, body.password)  # public registration is always consumer
+def account_service():
+    return AccountService()
+
+
+def mail_service():
+    return configured_mailer()
+
+
+AccountSvc = Annotated[AccountService, Depends(account_service)]
+
+
+def lifecycle_enabled():
+    if os.getenv('FOODSAVE_ACCOUNT_LIFECYCLE_ENABLED')!='true':
+        raise HTTPException(503,'帳號驗證服務尚未開放')
+
+
+def registration_enabled():
+    lifecycle_enabled()
+    if os.getenv('FOODSAVE_REGISTRATION_ENABLED')!='true' or privacy()['status']!='configured':
+        raise HTTPException(503,'公開註冊尚未開放')
+
+
+def account_quota(svc, request, email, action, sending=False):
+    ip=request.client.host if request.client else 'unknown'
+    # Never trust arbitrary X-Forwarded-For. Deployment must approve proxy trust.
+    svc.throttle('auth:'+action+':ip',ip,limit=10,window_seconds=900)
+    svc.throttle('auth:'+action+':email',email,limit=3 if sending else 10,window_seconds=900)
+    if sending:
+        svc.throttle('auth:mail:global:minute','all',limit=5,window_seconds=60)
+        svc.throttle('auth:mail:global:hour','all',limit=10,window_seconds=3600)
+        svc.throttle('auth:mail:global:day','all',limit=80,window_seconds=86400)
+
+
+@app.exception_handler(MailUnavailable)
+async def mail_unavailable(request, exc):
+    return JSONResponse(status_code=503,content={'detail':'寄信服務未就緒或結果尚未確認，請稍後再試；不代表郵件已送達。'})
+
+
+@app.exception_handler(PasswordCapacityError)
+async def password_capacity(request, exc):
+    return JSONResponse(status_code=503,content={'detail':'帳號服務忙碌，請稍後再試'})
+
+
+@app.get('/auth/options')
+def auth_options():
+    enabled=os.getenv('FOODSAVE_ACCOUNT_LIFECYCLE_ENABLED')=='true'
+    try:
+        mail_service()
+    except MailUnavailable:
+        enabled=False
+    return {'recovery_enabled':enabled,'registration_enabled':enabled and os.getenv('FOODSAVE_REGISTRATION_ENABLED')=='true' and privacy()['status']=='configured'}
+
+
+@app.post('/auth/register',status_code=202)
+def register(body:S.EmailRequest,request:Request,svc:AccountSvc):
+    registration_enabled()
+    mailer=mail_service()
+    account_quota(svc,request,body.email,'mail',sending=True)
+    return svc.request_code(body.email,'register',mailer)
+
+
+@app.post('/auth/verify-email')
+def verify_email(body:S.FinishAccount,request:Request,svc:AccountSvc):
+    registration_enabled()
+    account_quota(svc,request,body.email,'finish')
+    return svc.finish(body.email,'register',body.code,body.password)
+
+
+@app.post('/auth/forgot-password',status_code=202)
+def forgot_password(body:S.EmailRequest,request:Request,svc:AccountSvc):
+    lifecycle_enabled()
+    mailer=mail_service()
+    account_quota(svc,request,body.email,'mail',sending=True)
+    return svc.request_code(body.email,'reset',mailer)
+
+
+@app.post('/auth/reset-password')
+def reset_password(body:S.FinishAccount,request:Request,svc:AccountSvc):
+    lifecycle_enabled()
+    account_quota(svc,request,body.email,'finish')
+    return svc.finish(body.email,'reset',body.code,body.password)
+
+
+@app.post('/auth/change-password')
+def change_password(body:S.ChangePassword,user:User,svc:AccountSvc,value=Depends(token)):
+    lifecycle_enabled()
+    svc.throttle('auth:change',user['id'],limit=5,window_seconds=900)
+    return svc.change_password(user,value,body.current_password,body.password)
 
 
 @app.post('/auth/login')
-def login(body: S.Credentials, request: Request, svc: Svc):
-    svc.throttle('login', request.client.host if request.client else 'unknown')
-    return svc.login(body.email, body.password)
+def login(body:S.Credentials,request:Request,svc:Svc):
+    svc.throttle('login',request.client.host if request.client else 'unknown')
+    svc.throttle('login:email',body.email)
+    return svc.login(body.email,body.password)
 
 
 @app.post('/auth/logout')

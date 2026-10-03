@@ -11,7 +11,7 @@ async function fixture(page:Page,{drop=false,spins=1,role='consumer'}={}){
  await page.route('https://api.foodsave.test/**',async route=>{const req=route.request(),path=new URL(req.url()).pathname,method=req.method();const json=(body:unknown,status=200)=>route.fulfill({status,json:body});
   if(method==='OPTIONS')return route.fulfill({status:204,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'*','Access-Control-Allow-Methods':'*'}});
   if(path==='/auth/login')return json({access_token:sessionFixture});
-  if(path==='/auth/register')return json({id:userId,role:'consumer'},201);
+  if(path==='/auth/options')return json({registration_enabled:false,recovery_enabled:false});
   if(path==='/auth/logout')return json({logged_out:true});
   if(path==='/me')return deleted?json({detail:'請重新登入'},401):json({id:userId,email:'test@example.test',role,exp:0,spins:spins-draws});
   if(path==='/products')return json([{id:productId,store_id:'33333333-3333-3333-3333-333333333333',store_name:'測試店家',name:'真API契約測試商品',photo_url:'https://images.example.test/food.jpg',latitude:25.033,longitude:121.541,original_price_minor:10000,sale_price_minor:5000,source:'foodsave',service_mode:'reservation',available_quantity:stock,pickup_deadline:'2027-01-01T00:00:00',revision:1}]);
@@ -59,7 +59,7 @@ test('failed API login never falls back to a demo account',async({page})=>{
 });
 
 test('incomplete policy keeps registration closed; deletion is still only a request',async({page})=>{
- const mock=await fixture(page);await page.goto('/profile/');await page.getByRole('button',{name:'第一次使用？建立帳號'}).click();await page.getByLabel('電子郵件').fill('new@example.test');await page.getByLabel('密碼（至少12字元）').fill(passwordFixture);await page.getByRole('checkbox').check();await expect(page.getByRole('button',{name:'建立帳號',exact:true})).toBeDisabled();await page.getByRole('button',{name:'已有帳號？登入'}).click();await page.getByRole('button',{name:'登入',exact:true}).click();await page.getByRole('button',{name:'申請刪除帳號',exact:true}).click();await page.getByLabel('再次輸入密碼').fill(passwordFixture);await page.getByRole('checkbox').check();await page.getByRole('button',{name:'確認送出刪除申請'}).click();await expect(page.getByText(/尚未完成抹除/)).toBeVisible();expect(mock.deleted).toBe(true);await expect(page.getByRole('button',{name:'登入',exact:true})).toBeVisible();
+ const mock=await fixture(page);await page.goto('/profile/');await page.getByRole('button',{name:'第一次使用？建立帳號'}).click();await page.getByLabel('電子郵件').fill('new@example.test');await expect(page.getByRole('button',{name:'寄送驗證碼',exact:true})).toBeDisabled();await page.getByRole('button',{name:'返回登入'}).click();await login(page);await page.getByRole('button',{name:'申請刪除帳號',exact:true}).click();await page.getByLabel('再次輸入密碼').fill(passwordFixture);await page.getByRole('checkbox').check();await page.getByRole('button',{name:'確認送出刪除申請'}).click();await expect(page.getByText(/尚未完成抹除/)).toBeVisible();expect(mock.deleted).toBe(true);await expect(page.getByRole('button',{name:'登入',exact:true})).toBeVisible();
 });
 
 test('vendor API form loads after login and sends matching product contract',async({page})=>{

@@ -1,7 +1,8 @@
 import argparse
 import getpass
+from pydantic import ValidationError
 from .admin import AdminService
-from .schemas import Credentials
+from .schemas import Credentials, NewPassword
 from .ranking import RankingService
 
 
@@ -17,7 +18,11 @@ def main():
     elif args.command == 'expire':
         print('Expired reservations:', svc.expire_reservations())
     else:
-        body = Credentials(email=args.email or input('Email: '), password=getpass.getpass('Password (12+ characters): '))
+        try:
+            body = Credentials(email=args.email or input('Email: '), password=getpass.getpass('Password (15+ characters): '))
+            NewPassword(password=body.password)
+        except ValidationError:
+            parser.error('Invalid email or password policy; values withheld')
         if getpass.getpass('Repeat password: ') != body.password:
             parser.error('Passwords do not match')
         result = svc.register(body.email, body.password, args.role)

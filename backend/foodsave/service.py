@@ -1,4 +1,5 @@
 import hmac
+import os
 import json
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -76,11 +77,19 @@ class Service:
 
     def login(self, email, password):
         with self.transaction() as c:
-            user = one(c, 'SELECT * FROM dbo.users WHERE email=:e AND active=1', e=email)
+            user = one(c, 'SELECT * FROM dbo.users WITH(UPDLOCK,HOLDLOCK) WHERE email=:e AND active=1', e=email)
             # Same expensive hash work for nonexistent users.
             valid = verify_password(password, user['password_hash']) if user else bool(hash_password(password)) and False
             if not valid:
+                # Legacy hashes have a lower cost. Pad failed legacy checks with
+                # current-cost hashing rather than making them a cheap oracle.
+                if user and user['password_hash'].startswith('scrypt$'):
+                    hash_password(password)
                 fail(401, '帳號或密碼不正確')
+            if os.getenv('FOODSAVE_ACCOUNT_LIFECYCLE_ENABLED')=='true' and user['password_hash'].startswith('scrypt$'):
+                upgraded=one(c,'EXEC dbo.apply_account_password @user_id=:u,@expected_hash=:old,@new_hash=:new,@verify_email=0',u=user['id'],old=user['password_hash'],new=hash_password(password))
+                if not upgraded or upgraded['changed']!=1:
+                    fail(401,'帳號或密碼不正確')
             token = secrets.token_urlsafe(32)
             execute(c, 'INSERT INTO dbo.sessions(token_hash,user_id,expires_at) VALUES(:h,:u,DATEADD(hour,12,SYSUTCDATETIME()))', h=digest(token), u=user['id'])
             return {'access_token': token, 'token_type': 'bearer', 'expires_in': 43200}

@@ -2,6 +2,25 @@ import base64
 import hashlib
 import hmac
 import secrets
+from threading import BoundedSemaphore
+
+
+class PasswordCapacityError(Exception):
+    pass
+
+
+_PASSWORD_SLOTS = BoundedSemaphore(2)
+
+
+def _scrypt(password, salt, cost):
+    if not isinstance(password, str) or len(password) > 128:
+        raise ValueError("Invalid password length")
+    if not _PASSWORD_SLOTS.acquire(timeout=1):
+        raise PasswordCapacityError()
+    try:
+        return hashlib.scrypt(password.encode(), salt=salt, n=cost, r=8, p=1, maxmem=256*1024*1024)
+    finally:
+        _PASSWORD_SLOTS.release()
 
 
 def digest(value: str) -> str:
@@ -10,17 +29,20 @@ def digest(value: str) -> str:
 
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
-    key = hashlib.scrypt(password.encode(), salt=salt, n=16384, r=8, p=1)
-    return 'scrypt$' + base64.b64encode(salt).decode() + '$' + base64.b64encode(key).decode()
+    key = _scrypt(password, salt, 131072)
+    return 'scrypt-v2$' + base64.b64encode(salt).decode() + '$' + base64.b64encode(key).decode()
 
 
 def verify_password(password: str, encoded: str) -> bool:
     try:
         algorithm, salt, expected = encoded.split('$')
-        if algorithm != 'scrypt':
+        if algorithm not in ('scrypt','scrypt-v2'):
             return False
-        key = hashlib.scrypt(password.encode(), salt=base64.b64decode(salt), n=16384, r=8, p=1)
-        return hmac.compare_digest(key, base64.b64decode(expected))
+        salt_bytes=base64.b64decode(salt,validate=True);expected_bytes=base64.b64decode(expected,validate=True)
+        if len(salt_bytes)!=16 or len(expected_bytes)!=64:
+            return False
+        key = _scrypt(password, salt_bytes, 16384 if algorithm=='scrypt' else 131072)
+        return hmac.compare_digest(key, expected_bytes)
     except (ValueError, TypeError):
         return False
 

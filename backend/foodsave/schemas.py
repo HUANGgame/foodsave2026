@@ -25,6 +25,44 @@ class Credentials(Strict):
         return value
 
 
+class EmailRequest(Strict):
+    email: str = Field(min_length=5, max_length=254, pattern=r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,63}$")
+
+    @field_validator('email')
+    @classmethod
+    def normalize(cls, value):
+        local,domain=value.split('@')
+        if len(local)>64 or local.startswith('.') or local.endswith('.') or '..' in local or any(not label or len(label)>63 or label.startswith('-') or label.endswith('-') for label in domain.split('.')):
+            raise ValueError('Invalid email')
+        return value.casefold()
+
+
+class NewPassword(Strict):
+    password: str = Field(min_length=15, max_length=128)
+
+    @field_validator('password', mode='before')
+    @classmethod
+    def password_policy(cls, value):
+        if isinstance(value,str) and (value!=value.strip() or len(set(value))<5 or value.casefold() in {
+            'passwordpassword','password123456789','123456789012345','qwertyuiopasdfgh','letmeinletmein123'}):
+            raise ValueError('Choose a longer unique passphrase')
+        return value
+
+
+class FinishAccount(EmailRequest, NewPassword):
+    code: str = Field(pattern=r'^[A-Za-z0-9_-]{43}$')
+
+    @model_validator(mode='after')
+    def not_email_password(self):
+        if self.password.casefold()==self.email:
+            raise ValueError('Password must differ from email')
+        return self
+
+
+class ChangePassword(NewPassword):
+    current_password: str = Field(min_length=12, max_length=128)
+
+
 class Reservation(Strict):
     product_id: str = Field(pattern=r'^[a-f0-9-]{36}$')
     quantity: int = Field(ge=1, le=10, strict=True)
