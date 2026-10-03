@@ -47,3 +47,5 @@
 驗證結果：48後端單元／交易替身、10前端單元、9App browser mock通過，Next静態建置成功；pytest有1項Starlette/httpx棄用警告。未重建APK，既有APK不含本輪GPS變更。
 
 Android CI追加：標準ubuntu-24.04首次run 37101823813失敗（KVM預設讀寫權限不足），未sudo擴權、未SDK授權、未build/install/launch。最小一次性ACL提案待使用者確認，詳見ANDROID_CI.md；未增加Azure/DB權限或變更部署包。
+
+真Azure SQL驗收發現002的inline CHECK跨欄位造成8141；已改為表級 `ck_ranking_rules_range CHECK(end_rank>=start_rank)`。檢查001–004其餘CHECK未發現同類inline跨欄位問題，新增静態結構回歸（包含舊錯誤必須被偵測）。這不是SQL編譯測試；owner須確認前次交易rollback並重跑migration，不能因001曾印Applied就認定已提交。runtime ZIP未變。

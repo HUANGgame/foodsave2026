@@ -1,7 +1,8 @@
 CREATE TABLE dbo.ranking_rules (
  start_rank int NOT NULL PRIMARY KEY CHECK(start_rank>0),
- end_rank int NOT NULL CHECK(end_rank>=start_rank),
- spins int NOT NULL CHECK(spins BETWEEN 1 AND 100)
+ end_rank int NOT NULL,
+ spins int NOT NULL CHECK(spins BETWEEN 1 AND 100),
+ CONSTRAINT ck_ranking_rules_range CHECK(end_rank>=start_rank)
 );
 INSERT INTO dbo.ranking_rules(start_rank,end_rank,spins) VALUES (1,1,3),(2,10,2),(11,50,1);
 CREATE TABLE dbo.weekly_settlements (

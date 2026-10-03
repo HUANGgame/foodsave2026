@@ -24,8 +24,8 @@
   },
   {
     "file": "foodsave-owner-migrations.zip",
-    "bytes": 21940,
-    "sha256": "fb244cd8618b59cc5952fc3dc8abb74c906f05cc3249163d951cda8452f29370",
+    "bytes": 21958,
+    "sha256": "388ec192a74538dcb33c9b153d74cc5587856ed892041ece451c1db880062b96",
     "entries": [
       "foodsave/__init__.py",
       "foodsave/admin.py",
