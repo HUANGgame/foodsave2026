@@ -41,3 +41,19 @@ owner先依manifest exact UUID與fixture email/name雙重核對；掃描是否�
 本次僅Python語法檢查、無DB plan輸出及靜態隔離檢查。**尚未執行真SQL驗收，不能宣稱上述斷言通過。** 即使之後通過，仍非HTTP/CORS/代理節流／跨裝置／完整管理流程／週排行／備份還原驗收。不要在公開CI連真Azure或把manifest上傳到GitHub。
 
 部署端執行更新：2026-10-03 06:53 UTC，browser worker回報runtime MI／schema005、preflight users0／prizes0，rollback模式15斷言全部passed、exit0、committed_fixtures_remaining=false。此為部署端真SQL執行報告；並發模式未執行。
+
+## Approved concurrency fixture cleanup (owner only)
+
+The parent supplied explicit user approval to create the three synthetic accounts/product batch and remove only that batch after testing. `qa/owner_cleanup.py` is separate from deployment/startup/runtime and does not grant permissions. Use the existing authorized owner connection from `owner_migrate.py`; NEVER run with runtime MI or change its DELETE grants.
+
+Minimum additional file is `qa/owner_cleanup.py`; dependencies are the existing owner ZIP's `owner_migrate.py`, `foodsave` package and installed requirements. From that backend directory, set `PYTHONPATH=.`. Keep the original private recovery manifest intact. First run (counts only, transaction rolled back):
+
+```sh
+PYTHONPATH=. python qa/owner_cleanup.py --server "$FOODSAVE_SQL_SERVER" --database foodsave --driver "$FOODSAVE_ODBC_DRIVER" --manifest "$QA_MANIFEST"
+```
+
+Review `run_id`, counts (3 users, 1 store, 1 product, 0 or 1 reservation and matching request result), and `preview_sha256`. The deployment operator, under the granted batch-specific approval, may then repeat that exact command with `--apply --approved-preview-sha256 "$REVIEWED_PREVIEW_SHA256"`. Apply revalidates the complete preview under serializable locks; changed digest, marker, foreign references, row counts or SQL error rolls back. Set an external execution timeout (180 seconds); do not silently rerun an uncertain commit. SQL state must be checked privately if connection loss makes commit outcome uncertain.
+
+IDs must exactly match all UUIDv5 values derived from the manifest run UUID. Account emails/roles, store owner/name, product metadata, reservation customer/product/state/quantity/snapshot and the sole `reserve/qa-concurrent-stock` result must match. Any other account activity, enabled trigger or cascading/untrusted/disabled FK aborts. Only scoped request results, captured reservation IDs, product/store IDs and three account IDs are deleted. No DROP, global expiry job, other-table cleanup, grant or policy change. A second execution after successful cleanup intentionally fails closed on missing markers.
+
+Local verification covers malformed manifests, substituted IDs, preview rollback, stale-preview rejection and rollback on validation failure (3 tests); it is not evidence that cleanup executed on Azure SQL. Actual preview/apply results must be reported by the deployment operator.

@@ -55,3 +55,7 @@ Android CI追加：標準ubuntu-24.04首次run 37101823813失敗（KVM預設讀�
 Android fixture進展：run37103516509 success，真APK安裝啟動、WebView中消費者預約取消／商家表單／管理員入口及原生force-stop/relaunch通過。WebView provider、foreground activity及debug socket均有日誌證據，release設定未變。這是實際Android＋mock API，不是Azure／完整功能驗收；GPS、外部導航、完整admin、真SQL並發與冷啟動穩定性仍有限制。CI無artifact upload，沒有可下載CI APK。
 
 真SQL新證據（來源：部署端browser worker的runtime MI執行報告，2026-10-03 06:53 UTC；不是本地mock）：在schema005、preflight users=0／eligible prizes=0下，sql_acceptance rollback模式15項斷言passed、exit0、committed_fixtures_remaining=false。包含跨帳號取消拒絕、取消／核銷／到期重播、同key抽獎不重扣、procedure成功／額外owner參數拒絕、基表INSERT與owner欄位讀写拒絕、fixture rollback。兩連線並發模式尚未執行／待暫存資料與精確清理批准；不可把本輪回滾交易成功擴稱持久化／並發／HTTP／跨裝置全通過。
+
+Android追加驗證（2026-10-03 07:06 UTC）：run37104919923 / f16a3a16 success；真APK模擬器通過鍵盤、原生Back、拒絕定位／關閉定位服務、轉盤防連點／背景恢復／精確停獎／減少動畫，既有角色fixture也通過。無權限、release除錯或憑證變更，無付費runner／cache／artifact upload；不代表真API或實機FPS。
+
+並發batch清理已收到父流程附帶的使用者明確授權。新增owner-only `backend/qa/owner_cleanup.py`，預設preview、限定manifest衍生ID與QA標記，需先審閱preview digest再apply，serializable transaction及外部引用／筆數檢查。沒有執行真SQL清理或授予runtime DELETE；部署端負責實際操作與回報。

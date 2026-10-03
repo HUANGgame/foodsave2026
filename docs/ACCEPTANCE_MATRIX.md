@@ -49,3 +49,5 @@ Android CI基線：已建立公開標準runner有界workflow並執行一次，ru
 Android追加證據：run37103516509在commit3b87b045實際完成APK安裝／啟動／WebView UI fixture及force-stop/relaunch並success。消費者預約取消、商家表單、管理員入口、零次數抽獎守衛、記憶體token檢查通過。A01/A02只是部分項目取得證據，原生定位／返回／键盘／導航、真API／跨裝置、完整三角色功能仍未PASS；詳見ANDROID_CI。先前WebView逾時未重現，未宣稱根因已消除。
 
 真SQL rollback驗收：部署端於2026-10-03 06:53 UTC回報15 assertions passed、exit0，執行身分為受限runtime MI、schema005、fixture最後rollback且committed_fixtures_remaining=false。來源是部署端執行報告，不是mock。P01/P03/P05/P10相關局部資料庫路徑已有真SQL證據；P02雙連線搶庫存、持久資料一致性、HTTP及Android真API整合仍待辦。
+
+Android補測：run37104919923 / f16a3a16，2026-10-03 07:06 UTC success。實際API35 emulator鍵盤輸入／Back收鍵盤、GPS拒絕／系統定位關閉回饋、原生Back回個人頁、轉盤連點一次請求／HOME恢復／210度停獎／減少動畫及歷史恢復通過；保留原三角色fixture與程序重啟驗證。A01/P06/P06b/P06c/P09部分證據增加，但GPS允許真定位、實機FPS、外部導航、真API跨裝置及完整正式驗收仍未PASS。詳見ANDROID_CI。

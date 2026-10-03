@@ -47,3 +47,11 @@ sudo setfacl -m "u:$(id -un):rw" /dev/kvm
 APK v1/v2簽章通過，package tw.foodsave.demo，min23/target36，大小 **5,161,466 bytes**，SHA256 `8203fd831640241dea620e21732955e26cfcfc8978077b3d4caa80651eef7b94`。依零儲存費用要求沒有artifact upload，runner檔案已隨job回收，**此hash不是可下載交付連結**。
 
 先前兩次WebView偵測逾時在此輪未重現；健康啟動證據不能倒推先前失敗原因或聲稱已消除所有冷啟動競態。保留診斷及失敗紀錄，不盲目延長等待或反覆跑成功基線。真實裝置、原生定位同意／拒絕、原生返回鍵／鍵盤／外部導航、轉盤動畫FPS、真Azure API／SQL、跨裝置及完整管理流程仍未驗收。零付費／無額外權限與SDK自動授權的限制保持。
+
+## Sixth run: native input/location/back and wheel checks passed
+
+[run37104919923](https://github.com/HUANGgame/foodsave2026/actions/runs/37104919923), exact commit `f16a3a16f680f9c949475adab6c3a288f469721d`, job111151437543, finished **success**, 2026-10-03 07:06 UTC. Android API35 emulator installed and launched the real API36 debug APK; official Playwright connected to its Capacitor WebView. Native Back now navigates WebView history before falling through to Android's default behavior. No app permission or release debugging changes.
+
+Actual additional PASS evidence: native soft keyboard accepts ADB input and Back hides it without leaving login; Android location permission dialog denied with Chinese feedback and product list retained; device location service disabled with feedback and no fabricated location; native Back returns reservations to profile; wheel double-tap submits exactly one draw, HOME/resume preserves the result, wheel lands at the expected 210 degrees; reduced-motion media is honored and saved draw history restores after navigation. Existing consumer reserve/cancel, vendor form, admin entry, zero-spin/token guards and force-stop/relaunch checks also pass. Backend responses remain synthetic intercepted fixtures. Reduced-motion is emulated media on the actual Android WebView; no physical-device FPS or live Azure API claim.
+
+APK: package `tw.foodsave.demo`, version3 / 0.2.0-integration, **5,162,318 bytes**, SHA256 `71319da31d0e528da36d662efdeb415023f91583fad10d789b26a0d4c209117f`; v1/v2 signature verification passed. No artifact upload/cache; ephemeral CI APK is not a downloadable deliverable. Real GPS granted-position accuracy, external navigation, physical-device performance, full admin CRUD and Android-to-Azure/cross-device acceptance remain open.
