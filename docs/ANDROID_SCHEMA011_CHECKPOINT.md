@@ -1,3 +1,17 @@
+## 最新終態：Android fixture #18 SUCCESS（2026-10-03 10:05 UTC）
+
+[Run37114944635](https://github.com/HUANGgame/foodsave2026/actions/runs/37114944635)，job111179832455，精確測試commit `78c9c1073f3296c9904789b4b5e24a776e2ba0d8`。Next build／Gradle build、APK v1/v2簽章、minSdk23／targetSdk36、API35 emulator安裝／Activity啟動及全部fixture斷言通過。
+
+APK：`app-debug.apk`，5,314,759 bytes；SHA256 `e264623666a159e3862d34af0c692786aef4a1803a85cece342369b7fb1253b8`。package `tw.foodsave.demo`、versionCode3、versionName `0.2.0-integration`。維持no artifact upload，所以這份CI APK沒有可下載保留副本，不能聲稱已交付真人可用APK。
+
+七類新場景全部PASS：information無reserve；pending option disabled及fixture409模式不變；offline單帳號切換不混orders/notices；vendor-account零商品收藏與取消；通知顯示／已讀；explicit stock-loss confirmation及quantity0；expired confirm不顯示交付成功。另含keyboard真實tap/adb文字／Back、reserve/cancel、vendor表單、camera denied→manual preview→同keylost-reply重試、admin link、定位拒絕／停用、原生Back、wheel double-tap/HOME-resume/210°、reduced motion、memory-only token、force-stop重開登入。
+
+根因閉環：10:05:11 native focus再次顯示Google LocationOffWarningActivity，Awake；精確匹配後Back取消警告，10:05:12恢復FoodSave焦點，10:05:13原生Back真正返回profile。10:05:19 rAF=20、running animations=0、三次nav bounds一致；10:05:21原本一般locator.click通過（沒有force／DOM dispatch）。證據支持此次Back阻擋是fixture切換定位後的系統Activity，不需改產品返回邏輯。初始native email bounds亦實際觸控成功，保留IME與輸入斷言；不把#17自動化viewport失敗改寫為未發生。
+
+仍未測：Android與真API端到端／HTTP TLS CORS、實機流暢度、原生相機授權後實鏡掃碼、SQL通知失敗注入及schema011雙連線競爭。SQL41 PASS是部署端獨立證據；Android中mode409與库存等是mock，不替代SQL驗證。以下保留歷次失敗與診斷過程，過去「待結果」以本節終態為準。
+
+---
+
 # Schema011 Android fixture（不代表真API驗收）
 
 執行環境維持public standard Ubuntu、API35 emulator、target36 debug APK；無cache／artifact upload、無Azure或真人資料。既有temporary KVM精確user ACL不變，未新增manifest/privacy權限。測試mock僅存在CI process，APK assets仍連設定的HTTPS API，不內嵌mock服務。

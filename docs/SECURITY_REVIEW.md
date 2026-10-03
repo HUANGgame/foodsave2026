@@ -1,3 +1,5 @@
+> 最新Android更新：run37114944635（#18）、commit78c9c1073f3296c9904789b4b5e24a776e2ba0d8已完整SUCCESS；七類新fixture及native Back/HOME-resume/正常點擊通過。根因是定位測試留下Google系統警告，已限定取消並驗App焦點；產品返回邏輯未改。詳見[Android證據](ANDROID_SCHEMA011_CHECKPOINT.md)。仍未驗Android串真API，CI無保留APK artifact。
+
 ## 部署端確認：schema011 真SQL與回滾QA（2026-10-03）
 
 父流程回報：owner已完成006–011實際T-SQL compile/commit；限定runtime權限盤點76→96，role memberships仍0；runtime部署成功，private readiness=ready，registration=false、privacy=draft。實際資源及deployment識別碼只留私有交接，不公開。
