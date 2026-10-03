@@ -198,6 +198,9 @@ async function nativeInteractionChecks(page,mock){
   if(!page.url().startsWith('https://localhost'))throw Error('Not Capacitor local APK assets');
   pass('APK installed, native activity launched and Capacitor WebView rendered');
   const mock=await fixture(page);
+  await require('./account-fixture.cjs')(page,pass);
+  // Restore the original home entry after the isolated account contract.
+  await page.goto('https://localhost/');
   device('shell','settings','put','secure','show_ime_with_hard_keyboard','1');
   await focusEmailNatively(page);
   await expect.poll(()=>/mInputShown=true|isInputViewShown=true/.test(device('shell','dumpsys','input_method')),{timeout:15000}).toBe(true);

@@ -287,12 +287,14 @@ def catalog(user: User, svc: Svc):
 @app.post('/account/deletion-requests', status_code=202)
 def deletion(body: S.DeleteAccount, user: User, svc: Svc):
     svc.throttle('delete', user['id'])
+    password_quota(svc)
     return svc.request_deletion(user, body.password)
 
 
 def deletion_throttle(request, svc, email):
     svc.throttle('deletion-public-ip', request.client.host if request.client else 'unknown')
     svc.throttle('deletion-public-account', email)
+    password_quota(svc)
 
 
 @app.post('/account/deletion-status')

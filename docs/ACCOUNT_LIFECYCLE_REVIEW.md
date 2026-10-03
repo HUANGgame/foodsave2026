@@ -64,20 +64,22 @@
 
 ## 本地檢查 checkpoint
 
-後端全套210 passed（含獨立安全復核後修正）。前端unit17、browser33、production build／typecheck通過。19個本地變更檔的常見secret格式掃描無命中，無binary或私有設定；測試使用隨機合成password/code與假的SQL/mail，未寄真信、未在真SQL compile／驗並發。全流程HTTP fixture包含register→verify→login→forgot/reset→舊token失效→新密碼登入→change→再次撤銷；不是正式整合驗收。
+後端全套217 passed（含獨立安全復核後修正）。前端unit17、browser33、production build／typecheck通過。19個本地變更檔的常見secret格式掃描無命中，無binary或私有設定；測試使用隨機合成password/code與假的SQL/mail，未寄真信、未在真SQL compile／驗並發。全流程HTTP fixture包含register→verify→login→forgot/reset→舊token失效→新密碼登入→change→再次撤銷；不是正式整合驗收。
 
 
 ## 獨立只讀安全復核與部署阻擋項
 
 獨立reviewer檢查5aeb7d2候選，沒有發現直接HTTP帳號接管路徑，但不是零漏洞保證。
 
-- 已修：無效驗證碼在昂貴scrypt之前拒絕；新密碼hash只在有效ticket／帳號或有效session／目前密碼之後執行。login／finish／change共用SQL配額20次/min（一次可含驗證與升級hash），各process仍最多2個hash工作。共享小配額仍可被耗盡造成拒絕服務。
+- 已修：無效驗證碼在昂貴scrypt之前拒絕；新密碼hash只在有效ticket／帳號或有效session／目前密碼之後執行。login／finish／change及三個刪除帳號驗密入口共用SQL配額20次/min（一次可含驗證與升級hash），各process仍最多2個hash工作。共享小配額仍可被耗盡造成拒絕服務。
 - 已修：SMTP及ACS在初始化和送出前檢查最長24h核准期限；每封限單一收件者，SMTP序列化／ACS JSON UTF-8最多4096bytes。5/min、10/hour、30/day、1000/UTC曆月計數先於寄送，失敗也消耗配額。分／時／日是從首次請求起的fixed window，非rolling window；UTC月用獨立年月key。不宣稱USD1是硬性費用上限。
 - 待部署驗證（阻擋啟用）：startup --no-proxy-headers可能把所有人算成同一proxy IP。部署worker須核對實際ingress及受信代理設定；不得直接信任任意X-Forwarded-For。
-- 待真SQL驗證（阻擋啟用）：schema012 compile、精確runtime grants；同碼雙消耗、reset對change、login對reset、transaction rollback。210本地tests使用fake SQL，不能替代。
+- 待真SQL驗證（阻擋啟用）：schema012 compile、精確runtime grants；同碼雙消耗、reset對change、login對reset、transaction rollback。217本地tests使用fake SQL，不能替代。
 - 權限邊界：runtime新增challenge SELECT/INSERT/DELETE含全表能力，procedure只校驗active與expected hash、交易和新hash格式，不獨立驗證人類token/session。API在同一交易驗證；runtime本來就可讀users hashes、INSERT sessions/users。這是可信共用runtime，不是DB層每使用者隔離。本次沒有擴充已批准grant。
 - 真寄達及使用者私下設定密碼／重設仍待驗；不得在聊天、日誌或artifact提供raw code／密碼。隱私／erasure政策與實際寄信資料流揭露也須通過啟用檢查。
 
 使用者已批准本次掃描後auth source推送既有branch及指定部署範圍。具體資源與SQL操作交由Azure worker，不在本工作環境繞網路限制。修正不新增SQL／Azure權限。
 
 二次獨立復核指出郵件adapter與API email字元規則不一致；已共用EmailRequest並加入apostrophe／驚嘆號／等號合法地址及header injection拒絕測試。
+
+補充獨立復核：公開刪除狀態／刪除申請及登入後刪除入口原先漏接global password quota，已補上；七個HTTP密碼入口均驗證配額耗盡時429且不進入hash／驗密／服務操作。新增共享browser／Android帳號fixture涵蓋註冊、錯碼重設、成功重設、舊密碼拒絕、新密碼登入及改密碼登出；真Android結果另記，不以browser通過替代。

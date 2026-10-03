@@ -230,7 +230,7 @@ def test_mail_quota_shared_between_register_and_reset(http):
 
 
 def test_global_mail_quota_blocks_before_issue_or_send(http):
-    client,_,db,mail,limits=http;limits[('auth:mail:global:day','all')]=80
+    client,_,db,mail,limits=http;limits[('auth:mail:global:day','all')]=30
     assert client.post('/auth/register',json={'email':EMAIL}).status_code==429
     assert not mail.sent and not db.state['tickets']
 
@@ -397,3 +397,27 @@ def test_mail_recipient_uses_same_email_contract():
         assert EmailRequest(email=address).email==address
         validate_recipient(address)
     with pytest.raises(MailUnavailable):validate_recipient('victim@example.com\r\nBcc:other@example.com')
+
+
+@pytest.mark.parametrize('path,body',[
+ ('/auth/login',{'email':EMAIL,'password':PASSWORD}),
+ ('/auth/verify-email',{'email':EMAIL,'password':PASSWORD,'code':secrets.token_urlsafe(32)}),
+ ('/auth/reset-password',{'email':EMAIL,'password':PASSWORD,'code':secrets.token_urlsafe(32)}),
+ ('/auth/change-password',{'current_password':PASSWORD,'password':OTHER}),
+ ('/account/deletion-status',{'email':EMAIL,'password':PASSWORD}),
+ ('/account/deletion-request',{'email':EMAIL,'password':PASSWORD,'confirm':'DELETE'}),
+ ('/account/deletion-requests',{'password':PASSWORD,'confirm':'DELETE'}),
+])
+def test_exhausted_global_budget_stops_every_http_password_entry(http,monkeypatch,path,body):
+    client,svc,db,mail,limits=http
+    limits[('auth:password:global','all')]=20
+    api_module.app.dependency_overrides[api_module.current_user]=lambda:{'id':'fixture','email':EMAIL,'role':'consumer'}
+    def forbidden(*args,**kwargs):raise AssertionError('Exhausted password budget reached expensive operation')
+    for module in (accounts,service_module):
+        monkeypatch.setattr(module,'hash_password',forbidden)
+        monkeypatch.setattr(module,'verify_password',forbidden)
+    for method in ('login','finish','change_password','deletion_with_credentials','request_deletion'):
+        monkeypatch.setattr(svc,method,forbidden)
+    result=client.post(path,json=body,headers={'Authorization':'Bearer '+secrets.token_urlsafe(32)})
+    assert result.status_code==429
+    assert not db.sql and not mail.sent

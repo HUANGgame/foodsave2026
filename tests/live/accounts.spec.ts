@@ -29,3 +29,9 @@ test('change password confirms current password and clears local session after s
  });
  await page.goto('/profile/');await page.getByLabel('電子郵件').fill('owner@example.test');await page.getByLabel('密碼（至少12字元）').fill(old);await page.getByRole('button',{name:'登入',exact:true}).click();await page.getByRole('button',{name:'變更密碼',exact:true}).click();await page.getByLabel('目前密碼').fill(old);await page.getByLabel('新密碼（至少15字元）',{exact:true}).fill(password);await page.getByLabel('再次輸入新密碼').fill(password);await page.getByRole('button',{name:'確認變更密碼'}).click();await expect(page.getByRole('button',{name:'登入',exact:true})).toBeVisible();expect(changed).toBe(true);expect(submitted).toBe(1);const stored=await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}));for(const secret of [old,password,bearer])expect(stored).not.toContain(secret);
 });
+
+
+test('shared installed-Android account fixture completes register reset and password change',async({page})=>{
+ await page.goto('/');
+ await require('../../scripts/account-fixture.cjs')(page,()=>{});
+});
