@@ -39,3 +39,5 @@ owner先依manifest exact UUID與fixture email/name雙重核對；掃描是否�
 ## 證據邊界
 
 本次僅Python語法檢查、無DB plan輸出及靜態隔離檢查。**尚未執行真SQL驗收，不能宣稱上述斷言通過。** 即使之後通過，仍非HTTP/CORS/代理節流／跨裝置／完整管理流程／週排行／備份還原驗收。不要在公開CI連真Azure或把manifest上傳到GitHub。
+
+部署端執行更新：2026-10-03 06:53 UTC，browser worker回報runtime MI／schema005、preflight users0／prizes0，rollback模式15斷言全部passed、exit0、committed_fixtures_remaining=false。此為部署端真SQL執行報告；並發模式未執行。

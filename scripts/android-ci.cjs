@@ -4,6 +4,7 @@ const {_android}=require('playwright');
 const {execFileSync}=require('node:child_process');
 const {randomUUID}=require('node:crypto');
 const fs=require('node:fs');
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const adb=process.env.ANDROID_HOME+'/platform-tools/adb';
 function device(...args){return execFileSync(adb,['-s','emulator-5554',...args],{timeout:30000,encoding:'utf8'}).trim();}
 function pass(message){console.log('PASS',message);if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,`- PASS ${message}\n`);}
@@ -21,7 +22,10 @@ async function attach(){
  }
 }
 async function fixture(page){
- let role='consumer',order=null,stock=2,submitted=null;
+ let role='consumer',order=null,stock=2,submitted=null,drawRequests=0;
+ const draws=[],drawKeys=new Map();
+ const segments=Array.from({length:6},(_,i)=>({id:`qa-prize-${i}`,name:i===2?'Fixture8折券':`Fixture獎品${i}`}));
+ const prize={...segments[2],kind:'coupon',terms:'Synthetic fixture; no redemption value',expires_at:'2027-01-01T00:00:00',discount_percent:20};
  const productId='11111111-1111-1111-1111-111111111111',storeId='33333333-3333-3333-3333-333333333333';
  const password=randomUUID(),token=randomUUID(),pickup=randomUUID();
  await page.route('https://api.foodsave.test/**',route=>{
@@ -29,14 +33,16 @@ async function fixture(page){
   if(method==='OPTIONS')return route.fulfill({status:204,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'*','Access-Control-Allow-Methods':'*'}});
   if(path==='/auth/login'){const data=req.postDataJSON();role=data.email.split('@')[0];if(!['consumer','vendor','admin'].includes(role)||data.password!==password)return json({detail:'Fixture拒絕登入'},401);return json({access_token:token});}
   if(path==='/auth/logout')return json({logged_out:true});
-  if(path==='/me')return json({id:role+'-fixture',email:role+'@example.test',role,spins:0,exp:0});
+  if(path==='/me')return json({id:role+'-fixture',email:role+'@example.test',role,spins:2-draws.length,exp:0});
   if(path==='/products')return json([{id:productId,store_id:storeId,store_name:'Fixture店家',name:'Fixture便當',photo_url:'https://images.example.test/meal.png',latitude:25.033,longitude:121.541,available_quantity:stock,original_price_minor:10000,sale_price_minor:5000,pickup_deadline:'2027-01-01T12:00:00',revision:1}]);
   if(path==='/favorites')return json([]);
   if(path.startsWith('/stores/'))return json({average:null,count:0,items:[]});
   if(path==='/reservations'&&method==='GET')return json(order?[order]:[]);
   if(path==='/reservations'&&method==='POST'){stock--;order={id:'fixture-order',state:'waiting',quantity:1,product_id:productId,snapshot:{name:'Fixture便當',sale_price_minor:5000},pickup_code:pickup,expires_at:'2027-01-01T12:00:00'};return json(order,201);}
   if(path==='/reservations/fixture-order/cancel'){if(order.state==='waiting')stock++;order.state='cancelled';return json(order);}
-  if(path==='/prizes'||path==='/draws')return json([]);
+  if(path==='/prizes')return json(segments);
+  if(path==='/draws'&&method==='GET')return json(draws.map(d=>({id:d.id,prize_snapshot:JSON.stringify(d.prize),coupon_code:d.coupon_code})));
+  if(path==='/draws'&&method==='POST'){drawRequests++;const key=req.headers()['idempotency-key'];if(drawKeys.has(key))return json(drawKeys.get(key),201);if(draws.length>=2)return json({detail:'Fixture spins exhausted'},409);const draw={id:randomUUID(),prize,segments,coupon_code:randomUUID()};draws.push(draw);drawKeys.set(key,draw);return json(draw,201);}
   if(path==='/vendor/catalog')return json({stores:[{id:storeId,name:'Fixture店家'}],products:[]});
   if(path==='/vendor/reservations')return json([]);
   if(path==='/vendor/products'){submitted=req.postDataJSON();return json({id:productId,revision:1},201);}
@@ -44,7 +50,55 @@ async function fixture(page){
  });
  await page.route('https://images.example.test/**',r=>r.abort());
  async function login(as){await page.getByLabel('電子郵件').fill(as+'@example.test');await page.getByLabel('密碼（至少12字元）').fill(password);await page.getByRole('button',{name:'登入',exact:true}).click();await expect(page.getByRole('button',{name:'登入',exact:true})).toHaveCount(0);}
- return {login,pickup,token,get submitted(){return submitted;},get stock(){return stock;}};
+ return {login,pickup,token,get draws(){return draws;},get drawRequests(){return drawRequests;},get submitted(){return submitted;},get stock(){return stock;}};
+}
+async function denyLocationDialog(){
+ for(let attempt=0;attempt<4;attempt++){
+  device('shell','uiautomator','dump','/sdcard/foodsave-qa-ui.xml');
+  const xml=device('shell','cat','/sdcard/foodsave-qa-ui.xml');
+  const node=(xml.match(/<node[^>]*>/g)||[]).find(n=>/resource-id="[^"]*:id\/permission_deny_button"/.test(n));
+  const bounds=node?.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);
+  if(bounds){device('shell','input','tap',String(Math.floor((+bounds[1]+ +bounds[3])/2)),String(Math.floor((+bounds[2]+ +bounds[4])/2)));return;}
+  await pause(500);
+ }
+ throw Error('Expected native location permission denial control');
+}
+async function nativeInteractionChecks(page,mock){
+ await page.getByRole('link',{name:'探索地圖',exact:true}).click();
+ await page.getByRole('button',{name:'使用目前位置'}).click();
+ await denyLocationDialog();await expect(page.getByText(/未允許定位/)).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Fixture便當'})).toBeVisible();
+ pass('Native Android location permission denied; Chinese feedback and fixture list remain');
+ try{
+  device('shell','cmd','location','set-location-enabled','false');
+  await page.getByRole('button',{name:'使用目前位置'}).click();
+  await expect(page.getByText(/目前無法取得位置/)).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Fixture便當'})).toBeVisible();
+  pass('Native location service disabled; actionable feedback without fake position');
+ }finally{device('shell','cmd','location','set-location-enabled','true');}
+ await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('link',{name:'我的預約',exact:true}).click();
+ device('shell','input','keyevent','KEYCODE_BACK');await expect(page.getByRole('heading',{name:'個人中心',exact:true})).toBeVisible();
+ pass('Native Android Back returns from reservations to profile without exiting');
+ await page.getByRole('link',{name:'惜食任務',exact:true}).click();
+ await page.getByRole('button',{name:'開始惜食抽獎'}).click({clickCount:2});
+ await expect.poll(()=>mock.drawRequests).toBe(1);
+ await expect(page.getByText('結果已保存，正在揭曉',{exact:true})).toBeVisible();
+ device('shell','input','keyevent','KEYCODE_HOME');
+ device('shell','am','start','-W','-n','tw.foodsave.demo/.MainActivity');
+ await expect(page.getByRole('heading',{name:'獲得 Fixture8折券'})).toBeVisible({timeout:15000});
+ const landing=await page.locator('.prize-wheel').evaluate(el=>{const m=new DOMMatrix(getComputedStyle(el).transform);return (Math.atan2(m.b,m.a)*180/Math.PI+360)%360;});
+ expect(landing).toBeCloseTo(210,2);expect(mock.draws.length).toBe(1);expect(mock.drawRequests).toBe(1);
+ pass('Actual WebView wheel double-tap sends one draw; HOME/resume preserves result and 210-degree landing');
+ await page.getByRole('link',{name:'個人中心',exact:true}).click();
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await page.getByRole('link',{name:'惜食任務',exact:true}).click();
+ await expect(page.getByText(mock.draws[0].coupon_code,{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'開始惜食抽獎'}).click();
+ await expect(page.getByRole('heading',{name:'獲得 Fixture8折券'})).toBeVisible();
+ expect(await page.locator('.prize-wheel').evaluate(el=>el.getAnimations().length)).toBe(0);
+ expect(await page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true);
+ expect(mock.draws.length).toBe(2);expect(mock.drawRequests).toBe(2);
+ pass('Reduced-motion media honored in Android WebView; saved draw history restored after navigation');
 }
 (async()=>{
  let browser=await attach();
@@ -54,10 +108,20 @@ async function fixture(page){
   if(!page.url().startsWith('https://localhost'))throw Error('Not Capacitor local APK assets');
   pass('APK installed, native activity launched and Capacitor WebView rendered');
   const mock=await fixture(page);
+  device('shell','settings','put','secure','show_ime_with_hard_keyboard','1');
+  await page.getByLabel('電子郵件').click();
+  await expect.poll(()=>/mInputShown=true|isInputViewShown=true/.test(device('shell','dumpsys','input_method')),{timeout:15000}).toBe(true);
+  device('shell','input','text','keyboard-check@example.test');
+  await expect(page.getByLabel('電子郵件')).toHaveValue('keyboard-check@example.test');
+  device('shell','input','keyevent','KEYCODE_BACK');
+  await expect.poll(()=>/mInputShown=true|isInputViewShown=true/.test(device('shell','dumpsys','input_method')),{timeout:15000}).toBe(false);
+  await expect(page.getByRole('button',{name:'登入',exact:true})).toBeVisible();
+  pass('Native soft keyboard accepts adb input; Back hides keyboard without leaving login');
   await mock.login('consumer');await page.getByRole('button',{name:'預約1份'}).click();await expect(page.getByText(/預約成功/)).toBeVisible();
   await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('link',{name:'我的預約',exact:true}).click();await expect(page.getByText(mock.pickup,{exact:true})).toBeVisible();await page.getByRole('button',{name:'取消預約',exact:true}).click();await expect(page.getByText('已取消',{exact:true})).toBeVisible();expect(mock.stock).toBe(2);
   pass('Consumer reserve, order navigation and cancellation in Android WebView (API fixture)');
-  await page.getByRole('link',{name:'惜食任務',exact:true}).click();await expect(page.getByRole('button',{name:'開始惜食抽獎'})).toBeDisabled();
+  await nativeInteractionChecks(page,mock);
+  await expect(page.getByRole('button',{name:'開始惜食抽獎'})).toBeDisabled();
   expect(await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}))).not.toContain(mock.token);
   expect(await page.evaluate(()=>localStorage.getItem('foodsave-demo-v1'))).toBeNull();
   pass('Zero-spin guard, memory-only token and no demo fallback on fixture session');

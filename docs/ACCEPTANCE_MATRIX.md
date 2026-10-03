@@ -47,3 +47,5 @@ Android CI基線：已建立公開標準runner有界workflow並執行一次，ru
 005階段：62後端單元／mock／靜態測試通過，實際權限須部署端驗證。Android run37102663515有安裝／Activity啟動證據，但WebView逾時且角色UI未跑；A01/A02完整驗收仍未PASS。
 
 Android追加證據：run37103516509在commit3b87b045實際完成APK安裝／啟動／WebView UI fixture及force-stop/relaunch並success。消費者預約取消、商家表單、管理員入口、零次數抽獎守衛、記憶體token檢查通過。A01/A02只是部分項目取得證據，原生定位／返回／键盘／導航、真API／跨裝置、完整三角色功能仍未PASS；詳見ANDROID_CI。先前WebView逾時未重現，未宣稱根因已消除。
+
+真SQL rollback驗收：部署端於2026-10-03 06:53 UTC回報15 assertions passed、exit0，執行身分為受限runtime MI、schema005、fixture最後rollback且committed_fixtures_remaining=false。來源是部署端執行報告，不是mock。P01/P03/P05/P10相關局部資料庫路徑已有真SQL證據；P02雙連線搶庫存、持久資料一致性、HTTP及Android真API整合仍待辦。

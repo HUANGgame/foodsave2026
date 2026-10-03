@@ -53,3 +53,5 @@ Android CI追加：標準ubuntu-24.04首次run 37101823813失敗（KVM預設讀�
 005已批准的申請程序隔離：API只傳兩個UUID；程序強制未批准且owner時間空值。runtime新增單一procedure EXECUTE、基表INSERT仍拒絕。62後端測試通過（API拒絕惡意owner欄位、既有重試／交易mock、程序／grant靜態檢查）；真SQL权限与迁移未驗。Android第4run整體failure：build/sign/install/Activity成功，WebView偵測逾時，三角色UI未執行；詳見ANDROID_CI。
 
 Android fixture進展：run37103516509 success，真APK安裝啟動、WebView中消費者預約取消／商家表單／管理員入口及原生force-stop/relaunch通過。WebView provider、foreground activity及debug socket均有日誌證據，release設定未變。這是實際Android＋mock API，不是Azure／完整功能驗收；GPS、外部導航、完整admin、真SQL並發與冷啟動穩定性仍有限制。CI無artifact upload，沒有可下載CI APK。
+
+真SQL新證據（來源：部署端browser worker的runtime MI執行報告，2026-10-03 06:53 UTC；不是本地mock）：在schema005、preflight users=0／eligible prizes=0下，sql_acceptance rollback模式15項斷言passed、exit0、committed_fixtures_remaining=false。包含跨帳號取消拒絕、取消／核銷／到期重播、同key抽獎不重扣、procedure成功／額外owner參數拒絕、基表INSERT與owner欄位讀写拒絕、fixture rollback。兩連線並發模式尚未執行／待暫存資料與精確清理批准；不可把本輪回滾交易成功擴稱持久化／並發／HTTP／跨裝置全通過。
