@@ -75,3 +75,14 @@ PYTHONPATH=. python -m qa.schema011_notification_failure --execute --approved-qu
 舊候選`b29968b`尚未Azure實跑；安全審查指出跨SQL batch交易狀態判讀及額度口徑問題。本修訂把全部8競態＋2回滾／失敗批次納入單一manifest，移除額外fresh-run通知入口，加入同batch錯誤診斷及finally殘留檢查。修訂以獨立commit交接復審；舊hash不可當新版本驗證，尚未獲得本輪真SQL結果。
 
 後端runtime／migration／grant及部署ZIP未變。Android #19登入前焦點poll失敗，#20通過焦點／鍵盤後WebView連線關閉，根因尚未確認；#21與#22後續完整fixture流程通過，不代表先前根因已修復。超商整合及APK證據見[交付紀錄](ANDROID_CONVENIENCE_CHECKPOINT.md)。本輪SQL尚未執行。
+
+## 固定復審來源（2026-10-03）
+
+QA程式固定於 `673c15e024b99b12caf0a9ace8d8b599990ad638`；本地後端170 passed（含QA安全測試），尚未Azure實跑。以下四檔於後續App／CI修補中保持不變；不得使用舊版十競態manifest。
+
+| backend/qa 檔案 | SHA256 |
+|---|---|
+| schema011_fixture.py | `a74ce0d9d1cd01c4985a44c581d8a2b0096184248f25adfd5dc9815043d5eae4` |
+| schema011_races.py | `d3c4e266f418b48a53ee96023ee8af1532ccddf3f797a9c1584563b6197041ef` |
+| schema011_cleanup.py | `f5c7586454e362bed807250159c312b5a4106a6ed2b32ee1964b4afb89e33c9c` |
+| schema011_notification_failure.py | `64506fac98aa978e67ab83a04a1f26b5c5891d776b71eb4178a1d4c6fcc2b4bb` |

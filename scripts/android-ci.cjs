@@ -270,7 +270,7 @@ async function nativeInteractionChecks(page,mock){
    const cap=window.Capacitor,original=cap.nativePromise.bind(cap);window.__qaFamilyCalls=0;
    cap.nativePromise=(plugin,method,options)=>{
     if(plugin!=='CapacitorHttp')return original(plugin,method,options);
-    if(method!=='post'||options.url!=='https://stamp.family.com.tw/api/maps/MapProductInfo'||options.data.Latitude!==25.0375197||options.data.Longitude!==121.5636704||options.data.ProjectCode!=='202106302'||options.headers.Authorization)throw Error('Unexpected native public-source contract');
+    if(method!=='post'||options.url!=='https://stamp.family.com.tw/api/maps/MapProductInfo'||![[25.0375197,121.5636704],[22.625,120.314]].some(([lat,lng])=>options.data.Latitude===lat&&options.data.Longitude===lng)||options.data.ProjectCode!=='202106302'||options.headers.Authorization)throw Error('Unexpected native public-source contract');
     window.__qaFamilyCalls++;
     return Promise.resolve({status:200,headers:{},url:options.url,data:{code:1,data:[{oldPKey:'00123',name:'Android 合成全家',address:'合成契約地址',latitude:25.0375,longitude:121.5636,updateDate:'2026-10-03 19:10:01',info:[{categories:[{qty:999,products:[{code:'0001',name:'Android 合成友善便當',qty:2},{code:'0002',name:'Android 未知數量商品'}]}]}]}]}});
    };
@@ -280,6 +280,17 @@ async function nativeInteractionChecks(page,mock){
   await page.getByRole('button',{name:'顯示公開區域地圖'}).click();await expect(page.getByLabel('附近店家地圖')).toBeVisible();await expect(page.locator('.store-marker')).toContainText('？');
   await expect(page.getByText('折扣以門市結帳為準。')).toBeVisible();await expect(page.getByRole('button',{name:/預約|核銷|取貨/})).toHaveCount(0);
   await page.getByRole('button',{name:'查詢全家公開區域'}).click();expect(await page.evaluate(()=>window.__qaFamilyCalls)).toBe(1);
+  await page.getByLabel('手動選擇公開地區').selectOption('kaohsiung-lingya-v1');
+  await expect(page.getByText('查詢區域：高雄市苓雅區')).toBeVisible();await expect(page.getByRole('heading',{name:'Android 合成全家',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'查詢全家公開區域'}).click();await expect(page.getByRole('heading',{name:'Android 合成全家',exact:true})).toBeVisible();expect(await page.evaluate(()=>window.__qaFamilyCalls)).toBe(2);
+  await page.getByLabel('手動選擇公開地區').selectOption('taipei-xinyi-public-v1');await page.getByRole('button',{name:'查詢全家公開區域'}).click();expect(await page.evaluate(()=>window.__qaFamilyCalls)).toBe(2);
+  await page.getByRole('button',{name:'查詢我的附近'}).click();await expect(page.getByRole('dialog')).toContainText('stamp.family.com.tw');await page.getByRole('button',{name:'取消',exact:true}).click();expect(await page.evaluate(()=>window.__qaFamilyCalls)).toBe(2);
+  // Earlier checks denied native location; remove denial flags for this distinct
+  // consent flow so the real permission controller appears again. Never grant it.
+  for(const permission of ['android.permission.ACCESS_FINE_LOCATION','android.permission.ACCESS_COARSE_LOCATION'])device('shell','pm','clear-permission-flags','tw.foodsave.demo',permission,'user-set','user-fixed');
+  await page.getByRole('button',{name:'查詢我的附近'}).click();await page.getByRole('button',{name:'同意傳送位置並查詢'}).click();await denyLocationDialog();await expect(page.getByText('未允許定位，未傳送座標。請手動選地區。')).toBeVisible();expect(await page.evaluate(()=>window.__qaFamilyCalls)).toBe(2);
+  await page.getByLabel('手動選擇公開地區').selectOption('kaohsiung-lingya-v1');await page.getByRole('button',{name:'查詢全家公開區域'}).click();await expect(page.getByRole('heading',{name:'Android 合成全家',exact:true})).toBeVisible();expect(await page.evaluate(()=>window.__qaFamilyCalls)).toBe(2);
+  pass('Native installed APK area switching/cache and nearby disclosure/cancel/real permission denial; no location forwarded');
   await expect(page.getByRole('link',{name:'前往 OPENPOINT 官方 App'})).toHaveAttribute('href','https://play.google.com/store/apps/details?id=tw.net.pic.m.openpoint');
   await page.getByRole('link',{name:'返回自營店家與攤販'}).click();await expect(page.getByRole('heading',{name:'附近的好食物',exact:true})).toBeVisible();
   pass('Guest FamilyMart cards/cache/unknown quantities and 7-ELEVEN official entry; native bridge intercepted, no real source request');
