@@ -87,14 +87,20 @@ function nativeWindowFocus(){
  return (lines.length?lines:device('shell','dumpsys','activity','activities').split('\n').filter(l=>/mCurrentFocus=|mFocusedApp=/.test(l))).join('\n');
 }
 async function ensureFoodSaveForeground(){
- let dismissed=false;
- await expect.poll(()=>{
+ let dismissed=false;const observations=[];
+ try{await expect.poll(()=>{
   const focus=nativeWindowFocus();
+  if(observations.at(-1)!==focus)observations.push(focus);
   if(/mCurrentFocus=.*com\.google\.android\.gms.*LocationOffWarningActivity/.test(focus)&&!dismissed){
    dismissed=true;console.log('Dismissing known emulator LocationOffWarningActivity with Back (no consent accepted)');device('shell','input','keyevent','KEYCODE_BACK');return false;
   }
   return /mCurrentFocus=.*tw\.foodsave\.demo\/tw\.foodsave\.demo\.MainActivity/.test(focus);
- }).toBe(true);
+ }).toBe(true);}catch(error){
+  console.log('Native foreground assertion failed; observed focus fields',JSON.stringify(observations.slice(-6)));
+  console.log('Native foreground activity fields',device('shell','dumpsys','activity','activities').split('\n').filter(l=>/mCurrentFocus=|mFocusedApp=|topResumedActivity=|mResumedActivity=/.test(l)).join('\n'));
+  console.log('Native foreground power fields',device('shell','dumpsys','power').split('\n').filter(l=>/mWakefulness=|mInteractive=/.test(l)).join('\n'));
+  throw error;
+ }
  if(dismissed)pass('Known Google location-off system warning dismissed; FoodSave native focus restored without granting permission');
 }
 async function focusEmailNatively(page){
