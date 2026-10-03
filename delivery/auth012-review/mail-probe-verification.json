@@ -1,0 +1,7 @@
+{
+  "file": "foodsave-mail-delivery-probe.zip",
+  "bytes": 28626,
+  "sha256": "a06796c86af7bd7a140126c55192c13f12addb813804aa7d337ce7072bc038cc",
+  "source_commit": "a2722809188945bb1a524c992450bfc055b2595a",
+  "purpose": "Isolated once-only CLI notice; not API deployment; requires approved server env; no delivery confirmed"
+}

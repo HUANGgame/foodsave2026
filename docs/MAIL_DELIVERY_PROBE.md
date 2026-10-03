@@ -4,7 +4,7 @@
 
 ## 核准與限制
 
-收件者必須是本次父流程批准的唯一學校信箱；程式只追蹤其正規化SHA256，不把地址放進public source／APK。`FOODSAVE_MAIL_PROBE_TO`由Azure worker在server process環境提供，非任意地址參數。當前固定digest已在本地對批准地址核對一致。
+收件者必須是本次父流程批准的唯一學校信箱；probe本身只追蹤其正規化SHA256，不新增收件地址到source／APK。工具包沿用的api.py原本已含公開隱私聯絡信箱（同一地址）；它不是新秘密，不能宣稱整包不存在該地址。`FOODSAVE_MAIL_PROBE_TO`由Azure worker在server process環境提供，非任意地址參數。當前固定digest已在本地對批准地址核對一致。
 
 僅ACS／既有system-assigned MI；維持既有endpoint、Portal canonical sender、mail-approved、最長24h期限、無retry／tracking、4096bytes限制。兩個account flags必須明確false。工具不修改App設定、schema或授權、不啟server、不部署API。
 
