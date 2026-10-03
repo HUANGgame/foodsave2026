@@ -28,13 +28,15 @@ CREATE INDEX ix_reservation_terminals_user ON dbo.reservation_terminals(user_id)
 -- Preserve favorite rows, replacing store identity with its unique vendor account.
 ALTER TABLE dbo.favorites ADD vendor_id varchar(36) NULL;
 EXEC(N'UPDATE f SET vendor_id=s.owner_id FROM dbo.favorites f JOIN dbo.stores s ON s.id=f.store_id');
-DECLARE @fk sysname,@pk sysname;
+DECLARE @fk sysname,@pk sysname,@statement nvarchar(max);
 SELECT @fk=fk.name FROM sys.foreign_keys fk JOIN sys.foreign_key_columns c ON c.constraint_object_id=fk.object_id
  WHERE fk.parent_object_id=OBJECT_ID('dbo.favorites') AND COL_NAME(c.parent_object_id,c.parent_column_id)='store_id';
 SELECT @pk=name FROM sys.key_constraints WHERE parent_object_id=OBJECT_ID('dbo.favorites') AND type='PK';
 IF @fk IS NULL OR @pk IS NULL THROW 51000,'Unexpected favorites constraints',1;
-EXEC(N'ALTER TABLE dbo.favorites DROP CONSTRAINT '+QUOTENAME(@fk));
-EXEC(N'ALTER TABLE dbo.favorites DROP CONSTRAINT '+QUOTENAME(@pk));
+SET @statement=N'ALTER TABLE dbo.favorites DROP CONSTRAINT '+QUOTENAME(@fk);
+EXEC(@statement);
+SET @statement=N'ALTER TABLE dbo.favorites DROP CONSTRAINT '+QUOTENAME(@pk);
+EXEC(@statement);
 EXEC(N'ALTER TABLE dbo.favorites DROP COLUMN store_id');
 EXEC(N'ALTER TABLE dbo.favorites ALTER COLUMN vendor_id varchar(36) NOT NULL');
 EXEC(N'ALTER TABLE dbo.favorites ADD CONSTRAINT pk_favorites_account PRIMARY KEY(user_id,vendor_id)');

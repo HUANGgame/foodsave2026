@@ -158,3 +158,11 @@ def test_schema011_qa_counts_only_granted_columns():
     assert 'SELECT COUNT({col}) AS n FROM dbo.{table} WHERE {col} IN' in source
     assert 'SELECT COUNT(*) AS n FROM dbo.notifications' not in source
     assert "SELECT COUNT(*) AS n FROM dbo.{table} WHERE {col} IN" not in source
+
+
+def test_migration007_builds_quoted_constraint_statement_before_exec():
+    sql=(Path(__file__).resolve().parents[1]/'migrations/007_notifications_and_terminal_ledger.sql').read_text()
+    assert sql.count('EXEC(@statement);')==2
+    assert "SET @statement=N'ALTER TABLE dbo.favorites DROP CONSTRAINT '+QUOTENAME(@fk);" in sql
+    assert "SET @statement=N'ALTER TABLE dbo.favorites DROP CONSTRAINT '+QUOTENAME(@pk);" in sql
+    assert "EXEC(N'ALTER TABLE dbo.favorites DROP CONSTRAINT '+QUOTENAME" not in sql
