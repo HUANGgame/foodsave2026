@@ -17,7 +17,7 @@ class AdminService(Service):
     def create_store(self, user, key, data):
         require(user, 'admin')
         def action(c):
-            if not one(c, "SELECT id FROM dbo.users WHERE id=:id AND role='vendor' AND active=1", id=data['owner_id']):
+            if not one(c, "SELECT id FROM dbo.users WITH(UPDLOCK,HOLDLOCK) WHERE id=:id AND role='vendor' AND active=1", id=data['owner_id']):
                 fail(400, '請指定有效商家帳號')
             identity = uid()
             execute(c, 'INSERT INTO dbo.stores(id,owner_id,name,latitude,longitude) VALUES(:id,:owner_id,:name,:latitude,:longitude)', id=identity, **data)
@@ -41,23 +41,17 @@ class AdminService(Service):
             return {'id':store_id,'service_mode':mode,'pending_orders':pending,'history_preserved':True}
         return self.mutate(user, 'store-mode', key, {'id':store_id,'mode':mode}, action)
 
-    def expire_store_orders(self, user, key, store_id):
-        require(user, 'vendor')
+    def expire_store_orders(self,user,key,store_id):
+        require(user,'vendor')
         def action(c):
-            lock_store_mode(c, store_id)
-            if not one(c, 'SELECT id FROM dbo.stores WHERE id=:s AND owner_id=:u', s=store_id,u=user['id']):
-                fail(404, '找不到此商家店舖')
-            candidates=rows(c, "SELECT TOP (100) r.id,r.product_id FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id WHERE p.store_id=:s AND r.state='waiting' AND r.expires_at<=SYSUTCDATETIME() ORDER BY r.expires_at,r.id", s=store_id)
+            lock_store_mode(c,store_id)
+            if not one(c,'SELECT id FROM dbo.stores WHERE id=:s AND owner_id=:u',s=store_id,u=user['id']):fail(404,'找不到此商家店舖')
+            candidates=rows(c,"SELECT TOP (100) r.id FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id WHERE p.store_id=:s AND r.state IN ('waiting','expired') AND r.expires_at<=SYSUTCDATETIME() ORDER BY r.expires_at,r.id",s=store_id)
             count=0
             for item in candidates:
-                one(c, 'SELECT id FROM dbo.products WITH(UPDLOCK,HOLDLOCK) WHERE id=:id', id=item['product_id'])
-                expired=one(c, "SELECT quantity FROM dbo.reservations WITH(UPDLOCK,HOLDLOCK) WHERE id=:id AND state='waiting' AND expires_at<=SYSUTCDATETIME()", id=item['id'])
-                if expired:
-                    execute(c, "UPDATE dbo.reservations SET state='expired' WHERE id=:id", id=item['id'])
-                    execute(c, 'UPDATE dbo.products SET available_quantity=available_quantity+:q,revision=revision+1 WHERE id=:id', q=expired['quantity'],id=item['product_id'])
-                    count+=1
-            return {'expired_count':count, 'batch_limit':100}
-        return self.mutate(user, 'store-expire', key, {'store_id':store_id}, action)
+                if one(c,'EXEC dbo.expire_reservation @reservation_id=:id',id=item['id'])['outcome']=='expired':count+=1
+            return {'expired_count':count,'batch_limit':100}
+        return self.mutate(user,'store-expire',key,{'store_id':store_id},action)
 
     def save_product(self, user, key, data, product_id=None):
         require(user, 'vendor')
@@ -65,6 +59,7 @@ class AdminService(Service):
             store = one(c, 'SELECT id FROM dbo.stores WHERE id=:id AND owner_id=:u', id=data['store_id'], u=user['id'])
             if not store:
                 fail(404, '找不到此商家店舖')
+            lock_store_mode(c,data['store_id'])
             now = one(c, 'SELECT SYSUTCDATETIME() AS now')['now']
             if data['pickup_deadline'] <= now:
                 fail(422, '領取期限必須在未來')
@@ -85,17 +80,33 @@ class AdminService(Service):
             return {'id': identity, 'revision': (data['revision'] + 1) if product_id else 1}
         return self.mutate(user, 'product.save', key, {'id': product_id, **data}, action)
 
-    def adjust_stock(self, user, key, product_id, delta):
-        require(user, 'vendor')
+    def adjust_stock(self,user,key,product_id,delta):
+        require(user,'vendor')
         def action(c):
-            product = one(c, 'SELECT p.id FROM dbo.products p WITH(UPDLOCK,HOLDLOCK) JOIN dbo.stores s ON s.id=p.store_id WHERE p.id=:p AND s.owner_id=:u', p=product_id, u=user['id'])
-            if not product:
-                fail(404, '找不到此商品')
-            result = execute(c, 'UPDATE dbo.products SET available_quantity=available_quantity+:delta,revision=revision+1 WHERE id=:p AND available_quantity+:delta BETWEEN 0 AND 1000000', p=product_id, delta=delta)
-            if result.rowcount != 1:
-                fail(409, '庫存不能小於0，請重新載入')
-            return dict(one(c, 'SELECT id,available_quantity,revision FROM dbo.products WHERE id=:p', p=product_id))
-        return self.mutate(user, 'stock-adjust', key, {'id': product_id, 'delta': delta}, action)
+            lookup=one(c,'SELECT p.store_id FROM dbo.products p JOIN dbo.stores s ON s.id=p.store_id WHERE p.id=:p AND s.owner_id=:u',p=product_id,u=user['id'])
+            if not lookup:fail(404,'找不到此商品')
+            lock_store_mode(c,lookup['store_id'])
+            one(c,'SELECT id FROM dbo.products WITH(UPDLOCK,HOLDLOCK) WHERE id=:p',p=product_id)
+            result=execute(c,'UPDATE dbo.products SET available_quantity=available_quantity+:delta,revision=revision+1 WHERE id=:p AND available_quantity+:delta BETWEEN 0 AND 1000000',p=product_id,delta=delta)
+            if result.rowcount!=1:fail(409,'庫存不能小於0，請重新載入')
+            return dict(one(c,'SELECT id,available_quantity,revision FROM dbo.products WHERE id=:p',p=product_id))
+        return self.mutate(user,'stock-adjust',key,{'id':product_id,'delta':delta},action)
+
+    def stock_loss_preview(self,user,product_id):
+        require(user,'vendor')
+        with self.transaction() as c:
+            row=one(c,"SELECT p.id,p.name,p.revision,p.available_quantity,(SELECT COUNT(*) FROM dbo.reservations r WHERE r.product_id=p.id AND r.state='waiting') AS pending_count FROM dbo.products p JOIN dbo.stores s ON s.id=p.store_id WHERE p.id=:p AND s.owner_id=:u",p=product_id,u=user['id'])
+            if not row:fail(404,'找不到此商品')
+            return dict(row)
+
+    def report_stock_loss(self,user,key,product_id,data):
+        require(user,'vendor')
+        def action(c):
+            result=one(c,'EXEC dbo.report_stock_loss @vendor_id=:u,@product_id=:p,@expected_revision=:revision,@expected_pending=:pending,@actual_available=:actual',u=user['id'],p=product_id,revision=data['expected_revision'],pending=data['expected_pending'],actual=data['actual_available'])
+            if result['outcome']=='not_found':fail(404,'找不到此商品')
+            if result['outcome']!='applied':fail(409,'庫存或預約已變更，請重新核對受影響筆數')
+            return dict(result)
+        return self.mutate(user,'stock-loss',key,{'product_id':product_id,**data},action)
 
     def create_prize(self, user, key, data):
         require(user, 'admin')
@@ -139,6 +150,7 @@ class AdminService(Service):
 
     def vendor_orders(self, user):
         require(user, 'vendor')
+        self.expire_reservations(limit=25,vendor_id=user['id'])
         with self.transaction() as c:
             return [dict(r) for r in rows(c, 'SELECT r.id,r.product_id,r.state,r.quantity,r.snapshot,r.expires_at FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id JOIN dbo.stores s ON s.id=p.store_id WHERE s.owner_id=:u ORDER BY r.created_at DESC OFFSET 0 ROWS FETCH NEXT 100 ROWS ONLY', u=user['id'])]
 

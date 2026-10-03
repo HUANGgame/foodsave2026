@@ -108,7 +108,7 @@ def ready(svc: Svc):
     for attempt in range(2):
         try:
             with svc.transaction() as c:
-                found = one(c, "SELECT version FROM dbo.schema_migrations WHERE version='006_store_service_mode.sql'")
+                found = one(c, "SELECT version FROM dbo.schema_migrations WHERE version='011_mark_notification_read.sql'")
                 if not found:
                     raise HTTPException(503, '資料庫尚未初始化')
             return {'status': 'ready'}
@@ -153,6 +153,21 @@ def products(svc: Svc):
 @app.get('/prizes')
 def prizes(svc: Svc):
     return svc.public_prizes()
+
+
+@app.get('/stores')
+def stores(user: User,svc: Svc):
+    return svc.stores(user)
+
+
+@app.get('/notifications')
+def notifications(user: User,svc: Svc):
+    return svc.notifications(user)
+
+
+@app.post('/notifications/{identity}/read')
+def read_notification(identity: str,user: User,svc: Svc):
+    return svc.mark_notification_read(user,identity)
 
 
 @app.get('/favorites')
@@ -257,9 +272,9 @@ def draws(user: User, svc: Svc):
     return svc.history(user, 'draws')
 
 
-@app.put('/favorites/{store_id}')
-def favorite(store_id: str, body: S.Favorite, user: User, svc: Svc, key: Key):
-    return svc.favorite(user, key, store_id, body.enabled)
+@app.put('/favorites/{vendor_id}')
+def favorite(vendor_id: str, body: S.Favorite, user: User, svc: Svc, key: Key):
+    return svc.favorite(user, key, vendor_id, body.enabled)
 
 
 @app.post('/reservations/{identity}/review', status_code=201)
@@ -285,6 +300,16 @@ def store_mode(identity: str, body: S.StoreMode, user: User, svc: Svc, key: Key)
 @app.post('/vendor/stores/{identity}/expire')
 def expire_store(identity: str, user: User, svc: Svc, key: Key):
     return svc.expire_store_orders(user, key, identity)
+
+
+@app.get('/vendor/products/{identity}/stock-loss-preview')
+def stock_loss_preview(identity: str,user: User,svc: Svc):
+    return svc.stock_loss_preview(user,identity)
+
+
+@app.post('/vendor/products/{identity}/stock-loss')
+def stock_loss(identity: str,body: S.StockLoss,user: User,svc: Svc,key: Key):
+    return svc.report_stock_loss(user,key,identity,body.model_dump())
 
 
 @app.post('/vendor/products/{identity}/stock')

@@ -15,6 +15,8 @@ async function fixture(page:Page,{drop=false,spins=1,role='consumer'}={}){
   if(path==='/auth/logout')return json({logged_out:true});
   if(path==='/me')return deleted?json({detail:'請重新登入'},401):json({id:userId,email:'test@example.test',role,exp:0,spins:spins-draws});
   if(path==='/products')return json([{id:productId,store_id:'33333333-3333-3333-3333-333333333333',store_name:'測試店家',name:'真API契約測試商品',photo_url:'https://images.example.test/food.jpg',latitude:25.033,longitude:121.541,original_price_minor:10000,sale_price_minor:5000,source:'foodsave',service_mode:'reservation',available_quantity:stock,pickup_deadline:'2027-01-01T00:00:00',revision:1}]);
+  if(path==='/stores')return json([{id:'33333333-3333-3333-3333-333333333333',vendor_id:'vendor-fixture',name:'測試店家',latitude:25.033,longitude:121.541,service_mode:'reservation',product_count:1}]);
+  if(path==='/notifications')return json([]);
   if(path==='/favorites')return json([]);
   if(path.startsWith('/stores/'))return json({average:4.5,count:2,items:[{rating:5,body:'mock評論'}]});
   if(path==='/reservations'&&method==='GET')return json(order?[order]:[]);

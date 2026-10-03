@@ -1,3 +1,5 @@
+> 最新schema011 source checkpoint：後端132、前端12、browser20及build/typecheck本地通過；新通知/終態程序、帳號收藏UI已實作。006–011真SQL及新版Android仍未驗，舊版PASS不得移用。完整scope與未測項見SQL011_SECURITY_REVIEW.md；下表保留舊基線紀錄。
+
 # 正式版驗收矩陣（尚未執行）
 
 此表與現有demo測試分開。正式PASS必須有：版本／環境、帳號角色、操作步驟、UI證據、API結果、DB不變量與測試時間。逐列保留未完成範圍；下方最新證據記錄局部通過，不沿用demo測試冒充端到端正式驗收。

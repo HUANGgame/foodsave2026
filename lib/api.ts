@@ -1,5 +1,7 @@
 export type Account={id:string;email:string;role:'consumer'|'vendor'|'admin';exp:number;spins:number};
-export type LiveProduct={id:string;store_id:string;store_name:string;name:string;photo_url:string;latitude:number;longitude:number;original_price_minor:number;sale_price_minor:number;available_quantity:number|null;pickup_deadline:string;revision:number;active?:boolean;source?:'foodsave'|'seven-eleven'|'familymart';service_mode?:'information'|'reservation';sourceUpdatedAt?:string|null;checkedAt?:string|null;stale?:boolean;sourceURL?:string|null};
+export type LiveProduct={id:string;store_id:string;vendor_id?:string;store_name:string;name:string;photo_url:string;latitude:number;longitude:number;original_price_minor:number;sale_price_minor:number;available_quantity:number|null;pickup_deadline:string;revision:number;active?:boolean;source?:'foodsave'|'seven-eleven'|'familymart';service_mode?:'information'|'reservation';sourceUpdatedAt?:string|null;checkedAt?:string|null;stale?:boolean;sourceURL?:string|null};
+export type LiveStore={id:string;vendor_id:string;name:string;latitude:number;longitude:number;service_mode:'information'|'reservation';product_count:number};
+export type Notice={id:string;kind:string;body:string;created_at:string;read_at:string|null};
 export type Prize={id:string;name:string;kind?:string;terms?:string;expires_at?:string;discount_percent?:number};
 export type Draw={id:string;prize:Prize;segments:{id:string;name:string}[];coupon_code?:string};
 export type Order={id:string;product_id:string;state:string;quantity:number;snapshot:string|{name:string;sale_price_minor:number};expires_at:string;pickup_code?:string;pickup_qr?:string;cancellation_reason?:'vendor_closed'|null};
@@ -19,7 +21,7 @@ export class FoodApi {
   }catch(error){if(error instanceof ApiError)throw error;throw new ApiError(0,'連線未完成。請檢查網路後重試；未確認的操作會沿用原識別碼。');}finally{clearTimeout(timer);}
  }
  async login(email:string,password:string){this.clear();const session=await this.request<{access_token:string}>('/auth/login','POST',{email,password});this.token=session.access_token;const generation=++this.generation;try{const me=await this.request<Account>('/me');this.identity=me.id;return me;}catch(e){if(generation===this.generation)this.clear();throw e;}}
- async logout(){await this.request('/auth/logout','POST',{});this.clear();}
+ async logout(){const generation=this.generation;try{await this.request('/auth/logout','POST',{});}finally{if(this.generation===generation)this.clear();}}
  async mutate<T>(operation:string,path:string,body:unknown,method='POST'):Promise<T>{
   if(!this.identity)throw new ApiError(401,'請先登入');
   const generation=this.generation;

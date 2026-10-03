@@ -1,3 +1,15 @@
+# Schema011 新版 checkpoint（未部署）
+
+本段覆蓋舊版狀態，後文保留歷史證據。A/B已實作於source：007–011通知/終態/有限刪除程序，帳號收藏及revision介面；完整精確scope见[SQL011安全審查](SQL011_SECURITY_REVIEW.md)。實際MI與Application ID不進公開repo。沒有執行新GRANT、migration、真人刪除或部署。
+
+本輪最後build通過、TypeScript通過、前端12單元、後端132單元/結構測試、browser20 fixture通過，git diff --check通過；最後stock-loss更新時間來源補入查詢後另跑後端回歸。負向涵蓋actor payload拒絕、inbox/terminal scope、time/reason/idempotency、程序grant範圍及outer rollback。不是新SQL的編譯或鎖行為證明。秘密/PII掃描本輪變更無發現，保留批准HUANG/413637629@o365.tku.edu.tw與保留域synthetic資料。
+
+新增qa/terminal_rollback.py相容011，plan及安全gate已本地驗；真SQL未執行。舊pickup_rollback.py不能直接聲稱兼容011。仍需SQL通知失敗注入、雙連線競態、新API與Android驗收；不得引用舊Android成功run代替本輪。新30天notification/terminal expiry與owner有界清理是待批准設計，未部署排程；註冊與privacy-complete仍未開啟。
+
+共用MI可在任意SQL情境傳入actor ID；API認證與程序ownership checks是目前邊界，無DB per-user isolation。新增EXECUTE讓runtime可間接刪除指定業務資料，即使沒有直接DELETE；action-time批准須知悉此能力。沒有擴大users DELETE、roles、DDL、grants或租戶模型。
+
+---
+
 # 安全補強階段：證據與剩餘缺口
 
 目前已有本地mock、真SQL及Android fixture分區證據，**不是正式環境全部驗收通過**。下方「最新證據」為目前狀態，其餘階段紀錄保留歷史時點。

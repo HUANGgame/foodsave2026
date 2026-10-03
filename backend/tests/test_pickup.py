@@ -82,21 +82,22 @@ def test_stock_adjustment_bounded(delta):
 
 
 def test_confirmation_rechecks_owner_and_never_awards_other_store(monkeypatch):
-    sequence=iter([{'product_id':'p'},{'id':'p','owner_id':'other-vendor'}, {'user_id':'consumer','pickup_code_hash':'unused','state':'waiting','expires_at':NOW+timedelta(minutes=1),'now':NOW}])
+    monkeypatch.setattr(operations,'lock_store_mode',lambda *a:None)
+    sequence=iter([{'product_id':'p','store_id':'s'},{'id':'p','owner_id':'other-vendor'}, {'user_id':'consumer','pickup_code_hash':'unused','state':'waiting','expires_at':NOW+timedelta(minutes=1),'now':NOW}])
     monkeypatch.setattr(operations,'one',lambda *a,**k:next(sequence))
     monkeypatch.setattr(operations,'execute',lambda *a,**k:pytest.fail('must not mutate another store'))
     with pytest.raises(HTTPException) as error: Service()._transition(None,VENDOR,'order','completed',reviewed=True)
     assert error.value.status_code==404
 
 
-def test_confirmation_expiring_after_preview_returns_stock_not_exp(monkeypatch):
-    sequence=iter([{'product_id':'p'},{'id':'p','owner_id':'vendor'}, {'user_id':'consumer','product_id':'p','quantity':1,'state':'waiting','expires_at':NOW,'now':NOW}])
-    writes=[]
+def test_confirmation_expiring_after_preview_uses_atomic_expiry_and_terminal(monkeypatch):
+    monkeypatch.setattr(operations,'lock_store_mode',lambda *a:None)
+    sequence=iter([{'product_id':'p','store_id':'s'},{'id':'p','owner_id':'vendor'}, {'user_id':'consumer','product_id':'p','quantity':1,'state':'waiting','expires_at':NOW,'now':NOW},{'outcome':'expired'},{'user_id':'consumer','vendor_id':'vendor','reason':'expired'}])
     monkeypatch.setattr(operations,'one',lambda *a,**k:next(sequence))
-    monkeypatch.setattr(operations,'execute',lambda c,sql,**args:writes.append((sql,args)))
+    monkeypatch.setattr(operations,'execute',lambda *a,**k:pytest.fail('no Python stock return outside expiry procedure'))
     monkeypatch.setattr(operations,'award',lambda *a,**k:pytest.fail('expired cannot award EXP'))
-    assert Service()._transition(None,VENDOR,'order','completed',reviewed=True)=={'id':'order','state':'expired'}
-    assert writes[0][1]['state']=='expired' and writes[1][1]['q']==1
+    result=Service()._transition(None,VENDOR,'order','completed',reviewed=True)
+    assert result=={'id':'order','state':'expired','terminal_reason':'expired'}
 
 
 @pytest.mark.parametrize('owned,changed,status', [(False,False,404),(True,False,409),(True,True,200)])
@@ -104,11 +105,12 @@ def test_atomic_stock_adjustment_owner_and_bounds(monkeypatch, owned, changed, s
     from foodsave.admin import AdminService
     import foodsave.admin as admin
     from types import SimpleNamespace
+    monkeypatch.setattr(admin,'lock_store_mode',lambda *a:None)
     svc=AdminService();svc.mutate=lambda user,operation,key,payload,action:action(None)
     def query(c,sql,**args):
         if 'owner_id' in sql:
             assert args['u']=='vendor'
-            return {'id':'p'} if owned else None
+            return {'id':'p','store_id':'s'} if owned else None
         return {'id':'p','available_quantity':0,'revision':2}
     def execute(c,sql,**args):
         assert owned and 'available_quantity+:delta BETWEEN 0 AND 1000000' in sql

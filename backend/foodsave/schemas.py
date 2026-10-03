@@ -34,6 +34,13 @@ class StoreMode(Strict):
     service_mode: Literal['information','reservation']
 
 
+class StockLoss(Strict):
+    expected_revision: int = Field(ge=1, strict=True)
+    expected_pending: int = Field(ge=0, strict=True)
+    actual_available: int = Field(ge=0, le=1000000, strict=True)
+    confirm: Literal['CANCEL_AFFECTED']
+
+
 class StockAdjustment(Strict):
     delta: int = Field(ge=-1, le=1, strict=True)
 

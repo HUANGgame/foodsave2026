@@ -15,3 +15,9 @@ test('draw retry keeps original intent after a lost reply and never stores token
  globalThis.fetch=async(input,init)=>{const path=new URL(String(input)).pathname;if(path==='/auth/login')return Response.json({access_token:session});if(path==='/me')return Response.json({id:'user',role:'consumer'});keys.push((init!.headers as Record<string,string>)['Idempotency-Key']);if(++attempts===1)throw new TypeError('simulated lost response');return Response.json({id:'same-result'});};
  try{const api=new FoodApi('https://example.test');await api.login('member@example.test',randomUUID());await assert.rejects(api.mutate('draw','/draws',{}));assert.equal(api.hasPending('draw'),true);assert.ok(!JSON.stringify([...stored]).includes(session));await api.mutate('draw','/draws',{});assert.equal(keys[0],keys[1]);assert.equal(api.hasPending('draw'),false);}finally{globalThis.fetch=original;if(descriptor)Object.defineProperty(globalThis,'localStorage',descriptor);else Reflect.deleteProperty(globalThis,'localStorage');}
 });
+
+test('offline logout clears local authentication and next account stays separate',async()=>{
+ const original=globalThis.fetch;let identity='first';
+ globalThis.fetch=async(input)=>{const path=new URL(String(input)).pathname;if(path==='/auth/login')return Response.json({access_token:randomUUID()});if(path==='/me')return Response.json({id:identity,role:'consumer'});throw new TypeError('offline');};
+ try{const api=new FoodApi('https://example.test');await api.login('first@example.test',randomUUID());await assert.rejects(api.logout());assert.equal(api.authenticated,false);identity='second';assert.equal((await api.login('second@example.test',randomUUID())).id,'second');assert.equal(api.authenticated,true);}finally{globalThis.fetch=original;}
+});

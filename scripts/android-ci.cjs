@@ -37,6 +37,8 @@ async function fixture(page){
   if(path==='/vendor/pickups/preview'){pickupPreviews++;expect(req.postDataJSON().credential).toBe(pickup);return json({id:'fixture-pickup',name:'Fixture便當',quantity:1,total_price_minor:5000,review_token:reviewToken,review_expires_at:'2027-01-01T12:00:00'});}
   if(path==='/vendor/pickups/confirm'){pickupConfirms++;confirmKeys.push(req.headers()['idempotency-key']);expect(req.postDataJSON().review_token).toBe(reviewToken);if(pickupConfirms===1)return route.abort('failed');return json({id:'fixture-pickup',state:'completed'});}
   if(path==='/products')return json([{id:productId,store_id:storeId,store_name:'Fixture店家',name:'Fixture便當',photo_url:'https://images.example.test/meal.png',latitude:25.033,longitude:121.541,source:'foodsave',service_mode:'reservation',available_quantity:stock,original_price_minor:10000,sale_price_minor:5000,pickup_deadline:'2027-01-01T12:00:00',revision:1}]);
+  if(path==='/stores')return json([{id:storeId,vendor_id:'fixture-vendor',name:'Fixture店家',latitude:25.033,longitude:121.541,service_mode:'reservation',product_count:1}]);
+  if(path==='/notifications')return json([]);
   if(path==='/favorites')return json([]);
   if(path.startsWith('/stores/'))return json({average:null,count:0,items:[]});
   if(path==='/reservations'&&method==='GET')return json(order?[order]:[]);

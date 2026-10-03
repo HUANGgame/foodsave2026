@@ -84,6 +84,9 @@ def test_two_phase_and_receipt_retry(context):
     assert 'password_hash=' in statements and 'DELETE FROM dbo.sessions' in statements
     assert "'$.snapshot.name'" in statements and "'$.owner_id'" in statements
     assert 'DELETE FROM dbo.users' not in statements
+    assert 'DELETE FROM dbo.notifications WHERE user_id=:u' in statements
+    assert 'DELETE FROM dbo.reservation_terminals WHERE user_id=:u' in statements
+    assert 'related_vendor_id=NULL' in statements and 'vendor_id=NULL' in statements
     assert worker.process('request-fixture', apply=True)['state'] == 'sql_completed'
     count = len(db.data['writes'])
     assert worker.process('request-fixture', apply=True)['external_erasure_verified'] is False
@@ -103,7 +106,8 @@ def test_atomic_phase_recovers_after_failure(context, failure):
     assert worker.run(apply=True)[0]['state'] == 'failed_retryable'
     # run also performs bounded expired-receipt housekeeping after the rollback.
     assert db.data['request'] == before['request'] and db.data['receipt'] == before['receipt']
-    assert db.data['writes'][:-1] == before['writes']
+    assert db.data['writes'][:-3] == before['writes']
+    assert all('DELETE TOP (100)' in sql and 'expires_at<=' in sql for sql in db.data['writes'][-3:])
     db.fail_on = None
     assert worker.process('request-fixture', apply=True)['state'] in ('sql_completed', 'pii_cleared_business_retained')
 

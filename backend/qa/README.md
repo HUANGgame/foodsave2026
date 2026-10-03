@@ -75,3 +75,17 @@ PYTHONPATH=. python qa/pickup_rollback.py --execute --approved-quiet-window --ru
 Apply an external180-second timeout. Three synthetic identities (consumer/vendor/other-vendor), one store/product, sessions, receipts and rate buckets exist only within one outer transaction; all exit paths request rollback, no commit/cleanup/owner/grant operations. Product bounds and past-expiry fixtures are scoped to fresh UUIDv5 IDs; no real rule or user updates. No manifest or credentials are written. Auth uses realSQL sessions and normal FastAPI bearer dependencies; only the service's connection is pinned to the single rollback transaction. Routes run through TestClient's **in-process ASGI transport**, not public network HTTP; this does not bypass blocked browser URLs and does not prove deployed TLS/CORS/App integration or concurrency. No new external listener.
 
 Covers reserve replay/duplicate hold, opaque QR, preview without fulfillment/stock/EXP mutation, wrong store/consumer/format, manual fallback, review binding/token/expiry, one delivery and same-key recovery, EXP policy without rule changes, stock±1/replay/negative/upper bounds, expired code/release-once, manual guess limit, then zero residual checks for7 tables plus scoped rate buckets. Successful output gives exact assertion count/names; failed output only a fixed assertion name or exception class. Review failures privately, do not print SQL/credentials/codes. The local3 safety tests and syntax check are not realSQL execution proof. Actual camera scanning remains a physical-device acceptance item.
+
+## schema011 專用終態回滾驗收（待批准、未執行）
+
+`qa/terminal_rollback.py`適用本輪schema011來源；四個synthetic帳號、一店一商品及其交易只存在單一outer transaction，finally必rollback。預設plan無SQL連線，`--execute --approved-quiet-window --run-id <fresh UUID>`才執行；外部設180秒timeout。不得在公開CI連真DB。私有runner使用既有restricted runtime MI，不改owner/roles/grants，不輸出密碼、SQL參數或通知內容。成功才列出逐條斷言與rollback殘留數量。
+
+```sh
+PYTHONPATH=. python qa/terminal_rollback.py
+# 僅在父流程確認migration及精確grant、核准quiet window後：
+PYTHONPATH=. python qa/terminal_rollback.py --execute --approved-quiet-window --run-id "$FRESH_QA_RUN_UUID"
+```
+
+覆蓋time/state拒絕、owner/pending mismatch、缺貨release0、late cancel/expiry、原key恢復、通知scope、顧客followers去重、關店實體刪除及rollback。direct Service＋real SQL，不是HTTP或Android證據。通知失敗注入及雙連線競態尚未涵蓋；本地僅驗plan/拒絕未核准執行/錯誤preflight要求rollback。
+
+舊`pickup_rollback.py`固定7824868/schema005的證據與使用方式保留；**不可將README舊文的「or later」解讀成已兼容schema011**。本輪store預設及expired終態已變，舊腳本尚未移植，應用新terminal腳本驗本輪，完整QR SQL重驗仍待修訂。新檔必須與本輪backend一起使用，不能放進舊owner ZIP假裝已升級。

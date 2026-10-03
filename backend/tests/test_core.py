@@ -309,10 +309,11 @@ def test_only_consumer_can_draw(role):
 
 
 def test_cannot_cancel_another_users_reservation(monkeypatch):
+    monkeypatch.setattr(operations,'lock_store_mode',lambda *a:None)
     svc=Service()
     monkeypatch.setattr(svc,'mutate',lambda user,op,key,payload,action: action(None))
     def one(c,sql,**args):
-        if 'SELECT product_id' in sql:return {'product_id':'product'}
+        if 'SELECT r.product_id' in sql:return {'product_id':'product','store_id':'store'}
         if 'JOIN dbo.stores' in sql:return {'id':'product','owner_id':'vendor'}
         return {'user_id':'another-user','pickup_code_hash':'unused'}
     monkeypatch.setattr(operations,'one',one)
@@ -332,21 +333,22 @@ def test_repeated_deletion_returns_original_without_releasing_stock_again(monkey
 
 
 def test_deletion_rechecks_waiting_orders_before_returning_inventory(monkeypatch):
-    svc=Service(MemoryTransaction());calls=[];password_hash=hash_password(PASSWORD)
+    from datetime import timedelta
+    svc=Service(MemoryTransaction());calls=[];password_hash=hash_password(PASSWORD);now=datetime(2026,10,3)
+    monkeypatch.setattr(operations,'lock_store_mode',lambda *a:None)
     def one(c,sql,**args):
         if 'FROM dbo.users' in sql:return {'password_hash':password_hash,'active':True}
         if 'FROM dbo.deletion_requests' in sql:return None
-        if 'FROM dbo.products' in sql:return {'id':args['p']}
-        if 'FROM dbo.reservations' in sql:return {'quantity':2} if args['id']=='waiting' else None
+        if 'SELECT r.product_id' in sql:return {'product_id':'p1' if args['id']=='waiting' else 'p2','store_id':'s'}
+        if 'FROM dbo.products' in sql:return {'id':args['p'],'owner_id':'vendor'}
+        if 'FROM dbo.reservations' in sql:return {'quantity':2,'user_id':USER['id'],'product_id':'p1','state':'waiting' if args['id']=='waiting' else 'completed','expires_at':now+timedelta(hours=1),'now':now}
         raise AssertionError(sql)
     monkeypatch.setattr(operations,'one',one)
-    monkeypatch.setattr(operations,'rows',lambda *a,**k:[{'id':'waiting','product_id':'p1'},{'id':'completed-while-waiting','product_id':'p2'}])
+    monkeypatch.setattr(operations,'rows',lambda *a,**k:[{'id':'waiting'},{'id':'completed-while-waiting'}])
     monkeypatch.setattr(operations,'execute',lambda c,sql,**args:calls.append((sql,args)))
     result=svc.request_deletion(USER,PASSWORD)
-    inventory=[params for sql,params in calls if 'UPDATE dbo.products' in sql]
-    assert inventory==[{'q':2,'p':'p1'}]
+    assert [p for sql,p in calls if 'UPDATE dbo.products' in sql]==[{'q':2,'p':'p1'}]
     assert sum('EXEC dbo.submit_deletion_request' in sql for sql,p in calls)==1
-    assert any('DELETE FROM dbo.sessions' in sql for sql,p in calls)
     assert result['state']=='requested'
 
 

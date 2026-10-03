@@ -109,7 +109,10 @@ class Service:
             if old:
                 if not hmac.compare_digest(old['fingerprint'], fingerprint):
                     fail(409, '相同重試識別碼不可用於不同內容')
-                return json.loads(old['response'])
+                cached=json.loads(old['response'])
+                if cached.get('terminal_reason') and operation in ('reserve','pickup-preview'):
+                    fail(410, '此預約已移除，請查看通知與最新庫存')
+                return cached
             result = action(c)
             execute(c, 'INSERT INTO dbo.request_results(user_id,operation,request_key,fingerprint,response) VALUES(:u,:op,:k,:f,:r)',
                     u=user['id'], op=operation, k=key, f=fingerprint, r=dump(result))
@@ -130,10 +133,8 @@ class Service:
             store = one(c, 'SELECT service_mode,latitude,longitude FROM dbo.stores WITH(UPDLOCK,HOLDLOCK) WHERE id=:id', id=p['store_id'])
             if not store or store['service_mode'] != 'reservation':
                 fail(409, '此店僅提供庫存資訊，不能在App保留商品；請以現場為準')
-            # Reconcile only this product, bounded; product lock already held.
-            for old in rows(c, "SELECT TOP (25) id,quantity FROM dbo.reservations WITH(UPDLOCK,HOLDLOCK) WHERE product_id=:p AND state='waiting' AND expires_at<=SYSUTCDATETIME() ORDER BY expires_at,id", p=product_id):
-                execute(c, "UPDATE dbo.reservations SET state='expired' WHERE id=:id", id=old['id'])
-                execute(c, 'UPDATE dbo.products SET available_quantity=available_quantity+:q,revision=revision+1 WHERE id=:p', q=old['quantity'],p=product_id)
+            for old in rows(c, "SELECT TOP (25) id FROM dbo.reservations WHERE product_id=:p AND state IN ('waiting','expired') AND expires_at<=SYSUTCDATETIME() ORDER BY expires_at,id",p=product_id):
+                one(c, 'EXEC dbo.expire_reservation @reservation_id=:id',id=old['id'])
             result = execute(c, 'UPDATE dbo.products SET available_quantity=available_quantity-:q,revision=revision+1 WHERE id=:p AND available_quantity>=:q', p=product_id, q=quantity)
             if result.rowcount != 1:
                 fail(409, '商品庫存不足')
@@ -155,26 +156,34 @@ class Service:
             return self._transition(c, user, reservation_id, target, code)
         return self.mutate(user, 'transition', key, {'id': reservation_id, 'target': target, 'code_hash': digest(code)}, action)
 
+    def terminal_result(self, c, user, reservation_id):
+        terminal=one(c, 'SELECT reservation_id,user_id,vendor_id,reason FROM dbo.reservation_terminals WHERE reservation_id=:id',id=reservation_id)
+        if not terminal or (user['role']=='consumer' and terminal['user_id']!=user['id']) or (user['role']=='vendor' and terminal['vendor_id']!=user['id']):
+            fail(404, '找不到預約')
+        return {'id':reservation_id,'state':'expired' if terminal['reason']=='expired' else 'removed','terminal_reason':terminal['reason']}
+
     def _transition(self, c, user, reservation_id, target, code='', reviewed=False):
-        # Resolve immutable product id, then lock product before reservation.
-        lookup = one(c, 'SELECT product_id FROM dbo.reservations WHERE id=:id', id=reservation_id)
+        lookup=one(c,'SELECT r.product_id,p.store_id FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id WHERE r.id=:id',id=reservation_id)
         if not lookup:
-            fail(404, '找不到預約')
-        product = one(c, 'SELECT p.id,s.owner_id FROM dbo.products p WITH(UPDLOCK,HOLDLOCK) JOIN dbo.stores s ON s.id=p.store_id WHERE p.id=:p', p=lookup['product_id'])
-        r = one(c, 'SELECT *,SYSUTCDATETIME() AS now FROM dbo.reservations WITH(UPDLOCK,HOLDLOCK) WHERE id=:id', id=reservation_id)
-        if (target == 'cancelled' and r['user_id'] != user['id']) or (target == 'completed' and product['owner_id'] != user['id']):
-            fail(404, '找不到預約')
-        if target == 'completed' and not reviewed and not hmac.compare_digest(r['pickup_code_hash'], digest(code)):
-            fail(400, '取貨碼不正確')
-        if r['state'] != 'waiting':
-            fail(409, '預約已處理')
-        state = 'expired' if r['expires_at'] <= r['now'] else target
-        execute(c, "UPDATE dbo.reservations SET state=:state,completed_at=CASE WHEN :state='completed' THEN SYSUTCDATETIME() ELSE NULL END WHERE id=:id", state=state, id=reservation_id)
-        if state in ('cancelled','expired'):
-            execute(c, 'UPDATE dbo.products SET available_quantity=available_quantity+:q,revision=revision+1 WHERE id=:p', q=r['quantity'], p=r['product_id'])
-        else:
-            award(c, r['user_id'], 'pickup', reservation_id)
-        return {'id': reservation_id, 'state': state}
+            return self.terminal_result(c,user,reservation_id)
+        lock_store_mode(c,lookup['store_id'])
+        product=one(c,'SELECT p.id,s.owner_id FROM dbo.products p WITH(UPDLOCK,HOLDLOCK) JOIN dbo.stores s ON s.id=p.store_id WHERE p.id=:p',p=lookup['product_id'])
+        r=one(c,'SELECT *,SYSUTCDATETIME() AS now FROM dbo.reservations WITH(UPDLOCK,HOLDLOCK) WHERE id=:id',id=reservation_id)
+        if not r:
+            return self.terminal_result(c,user,reservation_id)
+        if (target=='cancelled' and r['user_id']!=user['id']) or (target=='completed' and product['owner_id']!=user['id']):
+            fail(404,'找不到預約')
+        if r['state'] in ('waiting','expired') and r['expires_at']<=r['now']:
+            one(c,'EXEC dbo.expire_reservation @reservation_id=:id',id=reservation_id)
+            return self.terminal_result(c,user,reservation_id)
+        if target=='completed' and not reviewed and not hmac.compare_digest(r['pickup_code_hash'],digest(code)):
+            fail(400,'取貨碼不正確')
+        if r['state']!='waiting':fail(409,'預約已處理')
+        execute(c,"UPDATE dbo.reservations SET state=:state,completed_at=CASE WHEN :state='completed' THEN SYSUTCDATETIME() ELSE NULL END WHERE id=:id",state=target,id=reservation_id)
+        if target=='cancelled':
+            execute(c,'UPDATE dbo.products SET available_quantity=available_quantity+:q,revision=revision+1 WHERE id=:p',q=r['quantity'],p=r['product_id'])
+        else:award(c,r['user_id'],'pickup',reservation_id)
+        return {'id':reservation_id,'state':target}
 
     def preview_pickup(self, user, key, credential):
         """Read-only order verification; persist only a short-lived confirmation receipt."""
@@ -203,6 +212,8 @@ class Service:
             if not result:
                 fail(404, '請先掃碼核對商品')
             receipt = json.loads(result['response'])
+            if receipt.get('terminal_reason'):
+                return self.terminal_result(c,user,receipt['id'])
             if not hmac.compare_digest(receipt['review_token'], review_token):
                 fail(404, '請先掃碼核對商品')
             if datetime.fromisoformat(receipt['review_expires_at']) <= result['now']:
@@ -238,7 +249,7 @@ class Service:
     def list_products(self):
         self.expire_reservations(limit=25)
         with self.transaction() as c:
-            products = rows(c, "SELECT p.id,p.store_id,s.name AS store_name,s.latitude,s.longitude,s.service_mode,p.name,p.photo_url,p.original_price_minor,p.sale_price_minor,p.available_quantity,p.pickup_deadline,p.revision,updates.source_updated_at,SYSUTCDATETIME() AS checked_at FROM dbo.products p JOIN dbo.stores s ON s.id=p.store_id OUTER APPLY (SELECT MAX(q.created_at) AS source_updated_at FROM dbo.request_results q WHERE q.operation IN ('product.save','stock-adjust') AND JSON_VALUE(q.response,'$.id')=p.id) updates WHERE p.active=1 AND p.pickup_deadline>SYSUTCDATETIME() ORDER BY p.id OFFSET 0 ROWS FETCH NEXT 200 ROWS ONLY")
+            products = rows(c, "SELECT p.id,p.store_id,s.name AS store_name,s.owner_id AS vendor_id,s.latitude,s.longitude,s.service_mode,p.name,p.photo_url,p.original_price_minor,p.sale_price_minor,p.available_quantity,p.pickup_deadline,p.revision,updates.source_updated_at,SYSUTCDATETIME() AS checked_at FROM dbo.products p JOIN dbo.stores s ON s.id=p.store_id OUTER APPLY (SELECT MAX(q.created_at) AS source_updated_at FROM dbo.request_results q WHERE q.operation IN ('product.save','stock-adjust','stock-loss') AND JSON_VALUE(q.response,'$.id')=p.id) updates WHERE p.active=1 AND p.pickup_deadline>SYSUTCDATETIME() ORDER BY p.id OFFSET 0 ROWS FETCH NEXT 200 ROWS ONLY")
             result=[]
             for row in products:
                 item=dict(row);updated=item.pop('source_updated_at');checked=item.pop('checked_at')
@@ -267,7 +278,7 @@ class Service:
 
     def favorites(self, user):
         with self.transaction() as c:
-            return [r['store_id'] for r in rows(c, 'SELECT store_id FROM dbo.favorites WHERE user_id=:u', u=user['id'])]
+            return [r['vendor_id'] for r in rows(c, 'SELECT vendor_id FROM dbo.favorites WHERE user_id=:u', u=user['id'])]
 
     def store_reviews(self, store_id):
         with self.transaction() as c:
@@ -277,42 +288,32 @@ class Service:
 
     def request_deletion(self, user, password):
         with self.transaction() as c:
-            current = one(c, 'SELECT password_hash,active FROM dbo.users WITH(UPDLOCK,HOLDLOCK) WHERE id=:u', u=user['id'])
-            if not current or not verify_password(password, current['password_hash']):
-                fail(401, '請確認密碼')
-            existing = one(c, 'SELECT id,state FROM dbo.deletion_requests WHERE user_id=:u', u=user['id'])
+            current=one(c,'SELECT password_hash,active FROM dbo.users WITH(UPDLOCK,HOLDLOCK) WHERE id=:u',u=user['id'])
+            if not current or not verify_password(password,current['password_hash']):fail(401,'請確認密碼')
+            existing=one(c,'SELECT id,state FROM dbo.deletion_requests WHERE user_id=:u',u=user['id'])
             if existing:
-                return {'id': existing['id'], 'state': existing['state'], 'account_disabled': not bool(current['active']), 'erasure_completed': existing['state'] == 'completed'}
-            if not current['active']:
-                fail(403, '帳號目前無法提出此申請，請聯絡營運者')
-            # Freeze new reservations for owned stores before closing their orders.
-            if user['role']=='vendor':
-                for store in rows(c, 'SELECT id FROM dbo.stores WHERE owner_id=:u ORDER BY id',u=user['id']):
-                    lock_store_mode(c, store['id'])
-                pending=rows(c, "SELECT r.id,r.product_id,CASE WHEN s.owner_id=:u THEN 'vendor_closed' ELSE 'account_deleted' END AS reason FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id JOIN dbo.stores s ON s.id=p.store_id WHERE r.state='waiting' AND (r.user_id=:u OR s.owner_id=:u) ORDER BY r.product_id,r.id",u=user['id'])
-            else:
-                pending=rows(c, "SELECT id,product_id FROM dbo.reservations WHERE user_id=:u AND state='waiting' ORDER BY product_id,id",u=user['id'])
+                if user['role']=='vendor' and existing['state']=='requested':
+                    result=one(c,'EXEC dbo.close_vendor_business @vendor_id=:u',u=user['id'])
+                    if result['outcome']!='closed':fail(409,'店家刪除尚未完成，請重試')
+                return {'id':existing['id'],'state':existing['state'],'account_disabled':not bool(current['active']),'erasure_completed':existing['state']=='completed'}
+            if not current['active']:fail(403,'帳號目前無法提出此申請，請聯絡營運者')
+            # Own consumer reservations use ordinary cancellation semantics.
+            # Vendor business orders are removed by the restricted procedure below.
+            pending=rows(c,"SELECT id FROM dbo.reservations WHERE user_id=:u AND state='waiting' ORDER BY product_id,id",u=user['id'])
             for item in pending:
-                one(c, 'SELECT id FROM dbo.products WITH(UPDLOCK,HOLDLOCK) WHERE id=:p', p=item['product_id'])
-                if user['role']=='vendor':
-                    order=one(c, "SELECT r.quantity,r.user_id FROM dbo.reservations r WITH(UPDLOCK,HOLDLOCK) JOIN dbo.products p ON p.id=r.product_id JOIN dbo.stores s ON s.id=p.store_id WHERE r.id=:id AND r.state='waiting' AND (r.user_id=:u OR s.owner_id=:u)",id=item['id'],u=user['id'])
-                else:
-                    order=one(c, "SELECT quantity FROM dbo.reservations WITH(UPDLOCK,HOLDLOCK) WHERE id=:id AND user_id=:u AND state='waiting'",id=item['id'],u=user['id'])
-                if order:
-                    execute(c, "UPDATE dbo.reservations SET state='cancelled' WHERE id=:id",id=item['id'])
-                    execute(c, 'UPDATE dbo.products SET available_quantity=available_quantity+:q,revision=revision+1 WHERE id=:p',q=order['quantity'],p=item['product_id'])
-                    if item.get('reason')=='vendor_closed':
-                        execute(c, "INSERT INTO dbo.request_results(user_id,operation,request_key,fingerprint,response) VALUES(:u,'vendor-closed',:key,:hash,:response)",u=order['user_id'],key='vendor-closed:'+item['id'],hash=digest(item['id']),response=dump({'id':item['id'],'state':'cancelled','reason':'vendor_closed'}))
-            # Disable access now; retain an auditable request until the approved
-            # retention/erasure job is implemented, never claim completed erasure.
-            identity = uid()
-            execute(c, 'EXEC dbo.submit_deletion_request @request_id=:id,@user_id=:u', id=identity, u=user['id'])
-            execute(c, 'UPDATE dbo.users SET active=0 WHERE id=:u', u=user['id'])
-            execute(c, 'DELETE FROM dbo.sessions WHERE user_id=:u', u=user['id'])
-            if user['role'] == 'vendor':
-                execute(c, 'UPDATE p SET active=0,revision=revision+1 FROM dbo.products p JOIN dbo.stores s ON s.id=p.store_id WHERE s.owner_id=:u', u=user['id'])
-            audit(c, user['id'], 'account.deletion_requested', identity)
-            return {'id': identity, 'state': 'requested', 'account_disabled': True, 'erasure_completed': False}
+                try:
+                    self._transition(c,{'id':user['id'],'role':'consumer'},item['id'],'cancelled')
+                except HTTPException as error:
+                    if error.status_code!=409:raise  # Concurrent completion is retained.
+            identity=uid()
+            execute(c,'EXEC dbo.submit_deletion_request @request_id=:id,@user_id=:u',id=identity,u=user['id'])
+            execute(c,'UPDATE dbo.users SET active=0 WHERE id=:u',u=user['id'])
+            execute(c,'DELETE FROM dbo.sessions WHERE user_id=:u',u=user['id'])
+            if user['role']=='vendor':
+                result=one(c,'EXEC dbo.close_vendor_business @vendor_id=:u',u=user['id'])
+                if result['outcome']!='closed':fail(409,'店家刪除尚未完成，請重試')
+            audit(c,user['id'],'account.deletion_requested',identity)
+            return {'id':identity,'state':'requested','account_disabled':True,'erasure_completed':False}
 
     def deletion_with_credentials(self, email, password, submit=False):
         # No session is issued: this remains usable after a lost deletion reply
@@ -328,19 +329,32 @@ class Service:
                 return {'id': request['id'] if request else None, 'state': request['state'] if request else 'not_requested', 'account_disabled': not bool(user['active']), 'erasure_completed': bool(request and request['state'] == 'completed')}
         return self.request_deletion(identity, password)
 
-    def favorite(self, user, key, store_id, enabled):
-        require(user, 'consumer')
+    def favorite(self, user, key, vendor_id, enabled):
+        require(user,'consumer')
         def action(c):
-            if not one(c, 'SELECT id FROM dbo.stores WHERE id=:id', id=store_id):
-                fail(404, '找不到店家')
-            exists = one(c, 'SELECT store_id FROM dbo.favorites WHERE user_id=:u AND store_id=:s', u=user['id'], s=store_id)
+            if not one(c,"SELECT u.id FROM dbo.users u WITH(UPDLOCK,HOLDLOCK) JOIN dbo.stores s ON s.owner_id=u.id WHERE u.id=:id AND u.role='vendor' AND u.active=1",id=vendor_id):
+                fail(404,'找不到店家')
+            exists=one(c,'SELECT vendor_id FROM dbo.favorites WHERE user_id=:u AND vendor_id=:v',u=user['id'],v=vendor_id)
             if enabled and not exists:
-                execute(c, 'INSERT INTO dbo.favorites(user_id,store_id) VALUES(:u,:s)', u=user['id'], s=store_id)
-                award(c, user['id'], 'favorite', user['id'] + ':' + store_id)
-            elif not enabled:
-                execute(c, 'DELETE FROM dbo.favorites WHERE user_id=:u AND store_id=:s', u=user['id'], s=store_id)
-            return {'store_id': store_id, 'enabled': enabled}
-        return self.mutate(user, 'favorite', key, {'store_id': store_id, 'enabled': enabled}, action)
+                execute(c,'INSERT INTO dbo.favorites(user_id,vendor_id) VALUES(:u,:v)',u=user['id'],v=vendor_id)
+                award(c,user['id'],'favorite',user['id']+':'+vendor_id)
+            elif not enabled:execute(c,'DELETE FROM dbo.favorites WHERE user_id=:u AND vendor_id=:v',u=user['id'],v=vendor_id)
+            return {'vendor_id':vendor_id,'enabled':enabled}
+        return self.mutate(user,'favorite',key,{'vendor_id':vendor_id,'enabled':enabled},action)
+
+    def notifications(self,user):
+        with self.transaction() as c:
+            return [dict(r) for r in rows(c,'SELECT TOP (50) id,kind,body,created_at,read_at FROM dbo.notifications WHERE user_id=:u AND expires_at>SYSUTCDATETIME() ORDER BY created_at DESC,id',u=user['id'])]
+
+    def mark_notification_read(self,user,notification_id):
+        with self.transaction() as c:
+            result=one(c,'EXEC dbo.mark_notification_read @user_id=:u,@notification_id=:id',u=user['id'],id=notification_id)
+            if result['outcome']!='read':fail(404,'找不到通知')
+            return {'read':True}
+
+    def stores(self,user):
+        with self.transaction() as c:
+            return [dict(r) for r in rows(c,"SELECT s.id,s.owner_id AS vendor_id,s.name,s.latitude,s.longitude,s.service_mode,(SELECT COUNT(*) FROM dbo.products p WHERE p.store_id=s.id AND p.active=1 AND p.pickup_deadline>SYSUTCDATETIME() AND p.available_quantity>0) AS product_count FROM dbo.stores s JOIN dbo.users u ON u.id=s.owner_id WHERE u.role='vendor' AND u.active=1 ORDER BY s.id OFFSET 0 ROWS FETCH NEXT 200 ROWS ONLY")]
 
     def review(self, user, key, reservation_id, rating, body):
         require(user, 'consumer')
@@ -355,19 +369,13 @@ class Service:
             return {'reservation_id': reservation_id, 'rating': rating, 'body': body}
         return self.mutate(user, 'review', key, {'id': reservation_id, 'rating': rating, 'body': body}, action)
 
-    def expire_reservations(self, limit=100, user_id=None):
-        # Bounded lazy reconciliation and explicit maintenance. Each item commits
-        # independently and locks product then reservation like cancellation.
+    def expire_reservations(self, limit=100, user_id=None, vendor_id=None):
+        if not 1<=limit<=100:raise ValueError('Expiry batch must be 1..100')
         with self.transaction() as c:
-            candidates = rows(c, "SELECT TOP (:limit) r.id,r.product_id,p.store_id FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id WHERE r.state='waiting' AND r.expires_at<=SYSUTCDATETIME() AND (:user IS NULL OR r.user_id=:user) ORDER BY r.expires_at,r.id", limit=limit,user=user_id)
-        count = 0
+            candidates=rows(c,"SELECT TOP (:limit) r.id FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id JOIN dbo.stores s ON s.id=p.store_id WHERE r.state IN ('waiting','expired') AND r.expires_at<=SYSUTCDATETIME() AND (:user IS NULL OR r.user_id=:user) AND (:vendor IS NULL OR s.owner_id=:vendor) ORDER BY r.expires_at,r.id",limit=limit,user=user_id,vendor=vendor_id)
+        count=0
         for item in candidates:
             with self.transaction() as c:
-                lock_store_mode(c, item['store_id'])
-                one(c, 'SELECT id FROM dbo.products WITH(UPDLOCK,HOLDLOCK) WHERE id=:id', id=item['product_id'])
-                expired = one(c, "SELECT quantity FROM dbo.reservations WITH(UPDLOCK,HOLDLOCK) WHERE id=:id AND state='waiting' AND expires_at<=SYSUTCDATETIME()", id=item['id'])
-                if expired:
-                    execute(c, "UPDATE dbo.reservations SET state='expired' WHERE id=:id", id=item['id'])
-                    execute(c, 'UPDATE dbo.products SET available_quantity=available_quantity+:q,revision=revision+1 WHERE id=:id', q=expired['quantity'], id=item['product_id'])
-                    count += 1
+                result=one(c,'EXEC dbo.expire_reservation @reservation_id=:id',id=item['id'])
+                if result['outcome']=='expired':count+=1
         return count

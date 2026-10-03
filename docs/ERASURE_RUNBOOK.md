@@ -32,3 +32,9 @@ SQL 備份、還原副本、匯出、部署／存取記錄、外部圖片或客�
 測試用交易替身只證明控制流程與 SQL 呼叫計畫；真SQL最後庫存競爭／參照完整性、大資料量、還原後重做、Android 都仍待驗收。未新增付費服務、排程、身份或權限。
 
 005增量：runtime透過僅含request_id/user_id參數的submit_deletion_request程序提交，固定未批准；既有同交易鎖／撤銷邏輯維持。批准與真正清除工具仍owner-only，005不批准任何帳號清除。
+
+## schema011來源相容性（未執行清除）
+
+新版owner工具需要schema011；收藏欄位已由store_id改vendor_id。本人notifications/reservation_terminals於clear_pii清除；其他受件人的店家通知文字／related_vendor_id及terminal.vendor_id清除識別；purge先刪新增FK子列再刪user。grace_days上限30。各批次在既有enabled＋individual approved＋policy門檻下才可執行。
+
+007提出通知及terminal各30天expires_at；enabled owner run每輪各最多100筆到期清理。未配置／部署排程，不宣稱自動準時抹除；保存長度及執行頻率需隨本版一併審查。business_retention_days、receipt_days及外部backup/log/photo程序仍需明確政策，不用此程式宣告隱私流程完成。刪terminal後保留的最小idempotency收據仍阻止同key重新建立訂單。

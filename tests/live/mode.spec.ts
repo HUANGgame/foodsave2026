@@ -6,6 +6,7 @@ async function setup(page:any,{role='consumer',mode='information',pending=0,sour
   if(req.method()==='OPTIONS')return route.fulfill({status:204});
   if(path==='/auth/login')return json({access_token:randomUUID()});
   if(path==='/me')return json({id:role,email:role+'@example.test',role,exp:0,spins:0});
+  if(path==='/stores')return json([{id:'s',vendor_id:'v',name:'資訊店家',latitude:0,longitude:0,service_mode:mode,product_count:1}]);
   if(path==='/products')return json([{id:'p',store_id:'s',store_name:'資訊店家',name:'資訊餐盒',latitude:0,longitude:0,photo_url:'https://images.example.test/p.png',original_price_minor:10000,sale_price_minor:5000,available_quantity:count,pickup_deadline:'2027-01-01T12:00:00',revision:1,source,service_mode:mode,sourceUpdatedAt:null,checkedAt:'2026-10-03T08:00:00',stale:true}]);
   if(path==='/vendor/catalog')return json({stores:[{id:'s',name:'資訊店家',service_mode:mode,pending_orders:pending}],products:[]});
   if(path==='/vendor/stores/s/mode'){updates++;mode=req.postDataJSON().service_mode;return json({id:'s',service_mode:mode});}
