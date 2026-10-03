@@ -5,8 +5,10 @@ from pathlib import Path
 import stat
 from uuid import UUID, uuid5
 
-PAIRS = ('reserve-mode', 'reserve-loss', 'cancel-loss', 'expiry-loss', 'reserve-close')
-CASES = tuple(f'{pair}-{first}' for pair in PAIRS for first in ('left', 'right'))
+PAIRS = ('reserve-mode', 'reserve-loss', 'cancel-loss', 'expiry-loss')
+RACE_CASES = tuple(f'{pair}-{first}' for pair in PAIRS for first in ('left', 'right'))
+INJECTION_CASES = ('notification-expiry', 'notification-loss')
+CASES = RACE_CASES + INJECTION_CASES
 NAMES = ('consumer-a', 'consumer-b', 'vendor', 'store', 'product', 'order-seed',
          'order-new', 'deletion', 'audit')
 
@@ -14,7 +16,7 @@ NAMES = ('consumer-a', 'consumer-b', 'vendor', 'store', 'product', 'order-seed',
 def make_manifest(run):
     if run.version != 4:
         raise ValueError('fresh_uuid4_required')
-    return {'format': 11, 'scope': 'schema011-ten-synthetic-races', 'run_id': str(run),
+    return {'format': 11, 'scope': 'schema011-eight-races-two-rollback-injections', 'run_id': str(run),
             'batches': {case: {n: str(uuid5(run, f'schema011:{case}:{n}')) for n in NAMES}
                         for case in CASES}}
 

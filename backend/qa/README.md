@@ -98,6 +98,6 @@ PYTHONPATH=. python qa/terminal_rollback.py --execute --approved-quiet-window --
 
 尚未測：通知INSERT失敗注入的SQL rollback、schema011相向雙連線競爭、public/deployed HTTP及Android實連線、實機相機。新Android fixture證據另見../../docs/ANDROID_SCHEMA011_CHECKPOINT.md。先前migration007 SQL102已修復並經部署端此次compile確認；不得把舊失敗紀錄改成從未發生。
 
-## 已批准下一輪：schema011 十批競態與精確清理（尚未真SQL執行）
+## 已批准下一輪：schema011 八批競態＋兩批通知回滾與精確清理（尚未真SQL執行）
 
-新工具與逐批執行／清理／失敗處置見 [深入驗收手冊](../../docs/SCHEMA011_DEEP_QA.md)。使用`schema011_races`、`schema011_cleanup`與無DDL的`schema011_notification_failure`；不能套用舊005清理。使用者已批准本輪最多10批synthetic資料與逐批精確清理，尚需固定來源獨立審查與部署端真SQL結果。公開CI不連Azure。
+新工具與逐批執行／清理／失敗處置見 [深入驗收手冊](../../docs/SCHEMA011_DEEP_QA.md)。使用`schema011_races`、`schema011_cleanup`與無DDL的`schema011_notification_failure`；不能套用舊005清理。使用者已批准本輪累計最多10批synthetic資料（含通知回滾與失敗），及需要時逐批精確清理，尚需固定來源獨立審查與部署端真SQL結果。公開CI不連Azure。

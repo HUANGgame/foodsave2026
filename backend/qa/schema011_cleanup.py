@@ -3,7 +3,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from qa.schema011_fixture import CASES, NAMES, email, expected_requests, marker, preflight, read_private, validate_manifest
+from qa.schema011_fixture import RACE_CASES as CASES, NAMES, email, expected_requests, marker, preflight, read_private, validate_manifest
 
 
 def validate_rows(case, ids, data):
@@ -11,13 +11,11 @@ def validate_rows(case, ids, data):
     users = {r['id']: r for r in data['users']}
     if set(users) != {ids[n] for n in NAMES[:3]}:
         raise ValueError('three_exact_users_required')
-    closure = case.startswith('reserve-close')
     for name in NAMES[:3]:
         u = users[ids[name]]
-        if u['email'] != email(ids, name) or u['role'] != ('vendor' if name=='vendor' else 'consumer') or (not u['active'] and not (closure and name=='vendor')):
+        if u['email'] != email(ids, name) or u['role'] != ('vendor' if name=='vendor' else 'consumer') or not u['active']:
             raise ValueError('user_marker_mismatch')
-    closed = not users[ids['vendor']]['active']
-    if len(data['stores']) != int(not closed) or len(data['products']) != int(not closed):
+    if len(data['stores']) != 1 or len(data['products']) != 1:
         raise ValueError('business_scope_mismatch')
     for row in data['stores']:
         if any(row[k] != v for k,v in {'id':ids['store'], 'owner_id':ids['vendor'], 'name':marker(ids), 'latitude':0, 'longitude':0}.items()) or row['service_mode'] not in ('reservation','information'):
@@ -35,7 +33,7 @@ def validate_rows(case, ids, data):
         if r['id'] not in allowed_orders or r['user_id'] != allowed_orders[r['id']] or r['product_id'] != ids['product'] or r['quantity'] != 1 or r['state'] not in ('waiting','cancelled') or snapshot.get('name') != marker(ids) or snapshot.get('store_id') != ids['store'] or snapshot.get('sale_price_minor') != 50:
             raise ValueError('reservation_scope_mismatch')
         present.add(r['id'])
-    allowed_reasons = {'expired','vendor_out_of_stock'} if case.startswith('expiry-') else {'vendor_closed'} if closure else {'vendor_out_of_stock'}
+    allowed_reasons = {'expired','vendor_out_of_stock'} if case.startswith('expiry-') else {'vendor_out_of_stock'}
     terminals = {}
     for r in data['reservation_terminals']:
         rid = r['reservation_id']
@@ -57,14 +55,8 @@ def validate_rows(case, ids, data):
     for n in data['notifications']:
         if (n['user_id'],n['event_key'],n['kind']) not in allowed_notices or n['related_vendor_id'] != ids['vendor'] or n['read_at'] is not None:
             raise ValueError('notification_scope_mismatch')
-    if len(data['deletion_requests']) != int(closed) or len(data['audit_logs']) != int(closed):
-        raise ValueError('closure_receipt_mismatch')
-    for r in data['deletion_requests']:
-        if r['id'] != ids['deletion'] or r['user_id'] != ids['vendor'] or r['state'] != 'requested' or r['approved_for_erasure'] or any(r[k] is not None for k in ('completed_at','pii_cleared_at','purge_after','policy_version')):
-            raise ValueError('deletion_scope_mismatch')
-    for r in data['audit_logs']:
-        if r['id'] != ids['audit'] or r['actor_id'] != ids['vendor'] or r['action'] != 'account.deletion_requested' or r['target_id'] != ids['deletion']:
-            raise ValueError('audit_scope_mismatch')
+    if data['deletion_requests'] or data['audit_logs']:
+        raise ValueError('unapproved_deletion_or_audit_activity')
     return {table:len(values) for table,values in data.items()}
 
 
@@ -92,7 +84,7 @@ FORBIDDEN = {
 }
 DELETE_KEYS = {'request_results':('user_id','operation','request_key'), 'notifications':('id',),
                'reservation_terminals':('reservation_id',), 'reservations':('id',),
-               'audit_logs':('id',), 'deletion_requests':('id',), 'products':('id',),
+               'products':('id',),
                'stores':('id',), 'users':('id',)}
 
 

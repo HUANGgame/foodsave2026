@@ -1,4 +1,4 @@
-"""Ten controlled, real two-connection schema011 races. One approved batch per invocation.
+"""Eight controlled, real two-connection schema011 races. One approved batch per invocation.
 No HTTP, owner cleanup, new grants, DDL, real accounts or public-CI execution.
 """
 import argparse
@@ -10,7 +10,7 @@ import secrets
 import threading
 from unittest.mock import patch
 from uuid import UUID
-from qa.schema011_fixture import CASES, expected_requests, key, make_manifest, preflight, read_private, seed, write_private
+from qa.schema011_fixture import RACE_CASES as CASES, expected_requests, key, make_manifest, preflight, read_private, seed, write_private
 
 
 class RaceFailure(Exception):
@@ -76,8 +76,6 @@ def action(wrapper, ids, case, operation, password):
     if operation == 'expiry':
         with wrapper.begin() as c:
             return dict(one(c,'EXEC dbo.expire_reservation @reservation_id=:id',id=ids['order-seed']))
-    if operation == 'close':
-        return service.request_deletion(vendor,password)
     raise RaceFailure('unknown_operation')
 
 
@@ -90,8 +88,6 @@ EXPECTED = {
     'cancel-loss-right': (200,200,0,None,'vendor_out_of_stock'),
     'expiry-loss-left': (200,409,1,None,'expired'),
     'expiry-loss-right': (200,200,0,None,'vendor_out_of_stock'),
-    'reserve-close-left': (201,200,None,None,'vendor_closed'),
-    'reserve-close-right': (404,200,None,None,None),
 }
 
 
@@ -120,7 +116,7 @@ def verify(c, ids, case, results):
     require(one(c,'SELECT COUNT(*) AS n FROM dbo.exp_events WHERE user_id IN (:a,:b,:v)',a=ids['consumer-a'],b=ids['consumer-b'],v=ids['vendor'])['n']==0, 'no_exp_or_penalty')
     receipts = rows(c,'SELECT user_id,operation,request_key,fingerprint FROM dbo.request_results WHERE user_id IN (:a,:b,:v)',a=ids['consumer-a'],b=ids['consumer-b'],v=ids['vendor'])
     allowed = expected_requests(case,ids)
-    expected_count = sum(r['status']<300 and op not in ('expiry','close') for r,op in zip(results,case.rsplit('-',1)[0].split('-')))
+    expected_count = sum(r['status']<300 and op != 'expiry' for r,op in zip(results,case.rsplit('-',1)[0].split('-')))
     require(len(receipts)==expected_count and all(allowed.get((r['user_id'],r['operation'],r['request_key']))==r['fingerprint'] for r in receipts), 'exact_request_receipts')
     if case=='expiry-loss-left':
         require(results[0]['outcome']=='expired', 'expiry_wins')
@@ -128,9 +124,6 @@ def verify(c, ids, case, results):
         require(results[0]['outcome']=='absent', 'expiry_after_loss_no_return')
     if case=='cancel-loss-right':
         require(results[0]['terminal_reason']=='vendor_out_of_stock', 'late_cancel_no_return')
-    if case.startswith('reserve-close'):
-        require(not one(c,'SELECT active FROM dbo.users WHERE id=:v',v=ids['vendor'])['active'], 'closure_disables_only_vendor')
-        require(one(c,'SELECT id FROM dbo.deletion_requests WHERE user_id=:v',v=ids['vendor'])['id']==ids['deletion'], 'exact_deletion_request')
     return ['two_distinct_sql_connections','real_store_lock_contention','exact_operation_statuses','exact_remaining_orders','stock_and_revision','store_state','terminal_release_once','notification_recipient_and_key','no_exp_or_penalty','exact_request_receipts']
 
 
@@ -160,7 +153,7 @@ def run_case(database, manifest, case, manifest_path):
             def worker(index):
                 wrapper.local.side = 'leader' if index==leader_index else 'follower'
                 op = operations[index]
-                wrapper.local.identities = iter([ids['order-new']] if op=='reserve' else [ids['deletion'],ids['audit']] if op=='close' else [])
+                wrapper.local.identities = iter([ids['order-new']] if op=='reserve' else [])
                 try:
                     result = action(wrapper,ids,case,op,password)
                     return {'status':201 if op=='reserve' else 200,'outcome':result.get('outcome'),'terminal_reason':result.get('terminal_reason')}
@@ -188,7 +181,7 @@ def main():
     parser.add_argument('--approved-committed-fixtures',action='store_true')
     args = parser.parse_args()
     if args.mode=='plan':
-        print(json.dumps({'mode':'plan','db_access':False,'cases':CASES,'per_batch':{'users':3,'stores':1,'products':1,'orders_max':2},'cleanup':'separate owner schema011 preview/apply after EVERY batch','not_covered':['HTTP','Android','uncontrolled scheduling','notification injection']}));return
+        print(json.dumps({'mode':'plan','db_access':False,'race_cases':CASES,'notification_cases_reserved':2,'cumulative_batch_limit_including_failed_and_rollback':10,'per_batch':{'users':3,'stores':1,'products':1,'orders_max':2},'cleanup':'separate owner schema011 preview/apply after EVERY batch','not_covered':['HTTP','Android','uncontrolled scheduling','notification injection']}));return
     if not args.manifest:
         parser.error('Private manifest required')
     database = None
@@ -197,7 +190,7 @@ def main():
             if not args.run_id:
                 parser.error('Fresh UUID4 required')
             write_private(args.manifest,make_manifest(args.run_id))
-            print(json.dumps({'mode':'manifest_created','db_access':False,'cases':10}));return
+            print(json.dumps({'mode':'manifest_created','db_access':False,'total_cases':10,'race_cases':8,'notification_rollback_cases':2}));return
         if not args.case or not args.approved_quiet_window or not args.approved_committed_fixtures:
             parser.error('Exact case, approved quiet window and committed fixtures required')
         manifest = read_private(args.manifest)

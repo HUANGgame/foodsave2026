@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 import pytest
 from qa import schema011_cleanup as cleanup
-from qa.schema011_fixture import CASES, NAMES, email, make_manifest, marker, read_private, validate_manifest, write_private
+from qa.schema011_fixture import CASES, RACE_CASES, INJECTION_CASES, NAMES, email, make_manifest, marker, read_private, validate_manifest, write_private
 
 
 def fixture(case='reserve-mode-left'):
@@ -21,6 +21,7 @@ def test_manifest_exact_ten_distinct_bounded_batches():
     value=make_manifest(uuid4())
     assert validate_manifest(value)==value
     assert len(value['batches'])==10
+    assert len(RACE_CASES)==8 and len(INJECTION_CASES)==2
     all_ids=[i for batch in value['batches'].values() for i in batch.values()]
     assert len(set(all_ids))==90
     for mutation in ('id','case','scope','extra'):
@@ -46,7 +47,7 @@ def test_manifest_private_durable_exclusive_and_symlink_rejection(tmp_path):
     with pytest.raises(ValueError):write_private(tmp_path/'other',value)
 
 
-@pytest.mark.parametrize('case',CASES)
+@pytest.mark.parametrize('case',RACE_CASES)
 def test_cleanup_accepts_seed_or_bounded_partial_batch(case):
     _,ids,data=fixture(case)
     assert cleanup.validate_rows(case,ids,data)['users']==3
@@ -72,14 +73,11 @@ def test_cleanup_validates_terminal_notice_pair_and_foreign_user():
     with pytest.raises(ValueError):cleanup.validate_rows(case,ids,data)
 
 
-def test_cleanup_closed_business_has_exact_deletion_and_audit_without_owner_approval():
-    case='reserve-close-right';_,ids,data=fixture(case)
-    data['users'][2]['active']=False;data['stores']=[];data['products']=[]
-    data['deletion_requests']=[dict(id=ids['deletion'],user_id=ids['vendor'],state='requested',approved_for_erasure=False,completed_at=None,pii_cleared_at=None,purge_after=None,policy_version=None)]
-    data['audit_logs']=[dict(id=ids['audit'],actor_id=ids['vendor'],action='account.deletion_requested',target_id=ids['deletion'])]
-    cleanup.validate_rows(case,ids,data)
-    data['deletion_requests'][0]['approved_for_erasure']=True
+def test_cleanup_rejects_unapproved_closure():
+    case=RACE_CASES[0];_,ids,data=fixture(case)
+    data['users'][2]['active']=False
     with pytest.raises(ValueError):cleanup.validate_rows(case,ids,data)
+    assert not any('close' in case for case in CASES)
 
 
 class Transaction:
@@ -206,11 +204,20 @@ def test_actual_worker_gate_requires_distinct_connections_and_busy_probe(monkeyp
         with wrapper.begin():pytest.fail('action must not run without contention')
 
 
-def test_notification_failure_always_rolls_back_and_requires_sql_unique_error(monkeypatch):
+@pytest.mark.parametrize('diagnostic',[
+    {'error_number':2627,'xact_state':-1,'transaction_count':1},
+    {'error_number':1205,'xact_state':0,'transaction_count':0},
+    {'error_number':2627,'xact_state':0,'transaction_count':0},
+    {'error_number':0,'xact_state':1,'transaction_count':1},
+    None,
+])
+def test_notification_same_batch_and_residual_checks_even_on_failure(monkeypatch,tmp_path,diagnostic):
     from qa import schema011_notification_failure as failure
     from sqlalchemy.exc import DBAPIError
     import foodsave.db as db
-    connections=[]
+    connections=[];residual=[]
+    tmp_path.chmod(0o700);path=tmp_path/'manifest';manifest=make_manifest(uuid4())
+    write_private(path,manifest)
     class FakeDatabase:
         def connect(self):
             c=Connection();connections.append(c);return c
@@ -218,17 +225,35 @@ def test_notification_failure_always_rolls_back_and_requires_sql_unique_error(mo
     monkeypatch.setattr(failure,'seed',lambda *a,**k:None)
     monkeypatch.setattr(db,'execute',lambda *a,**k:None)
     def one(c,sql,**kwargs):
-        if sql.startswith('EXEC '):raise DBAPIError(None,None,Exception('(2627) withheld'))
-        return {'n':-1 if 'XACT_STATE' in sql else 0}
+        if 'sp_getapplock' in sql:return {'result':0}
+        if sql.startswith('BEGIN TRY '):
+            assert 'ERROR_NUMBER()' in sql and '@@TRANCOUNT' in sql and 'BEGIN CATCH' in sql
+            if diagnostic is None:raise DBAPIError(None,None,Exception('(1205) withheld'))
+            return diagnostic
+        if c is connections[-1] and len(connections)>1:residual.append(sql)
+        return {'n':0}
     monkeypatch.setattr(db,'one',one)
-    assert len(failure.suite(FakeDatabase(),uuid4()))==4
-    assert all(not c.tx.committed for c in connections)
-    assert all(not c.tx.is_active for c in connections[::2])
-    def wrong(*a,**k):raise DBAPIError(None,None,Exception('(1205) withheld'))
-    monkeypatch.setattr(db,'one',wrong)
-    with pytest.raises(failure.InjectionFailure,match='wrong_sql_failure'):
-        failure.suite(FakeDatabase(),uuid4())
-    assert not connections[-1].tx.is_active and not connections[-1].tx.committed
+    if diagnostic and diagnostic['error_number']==2627 and diagnostic['xact_state']==-1:
+        assert len(failure.suite(FakeDatabase(),manifest,INJECTION_CASES[0],path))==2
+    else:
+        with pytest.raises((failure.InjectionFailure,DBAPIError)):
+            failure.suite(FakeDatabase(),manifest,INJECTION_CASES[0],path)
+    assert len(residual)==len(cleanup.SCOPES)+len(cleanup.FORBIDDEN)
+    assert not connections[0].tx.is_active and not connections[0].tx.committed
+    assert Path(str(path)+'.'+INJECTION_CASES[0]+'.started').exists()
+    before=len(connections)
+    with pytest.raises(FileExistsError):failure.suite(FakeDatabase(),manifest,INJECTION_CASES[0],path)
+    assert len(connections)==before
+
+
+def test_notification_checks_all_scopes_after_nonzero_residual(monkeypatch):
+    from qa.schema011_notification_failure import verify_zero,InjectionFailure
+    import foodsave.db as db
+    checks=[]
+    def one(c,sql,**kwargs):checks.append(sql);return {'n':1}
+    monkeypatch.setattr(db,'one',one)
+    with pytest.raises(InjectionFailure):verify_zero(Database(),make_manifest(uuid4())['batches'][INJECTION_CASES[0]])
+    assert len(checks)==len(cleanup.SCOPES)+len(cleanup.FORBIDDEN)
 
 
 def test_foreign_non_fk_references_are_in_stop_scope():
