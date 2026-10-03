@@ -150,3 +150,11 @@ def test_schema011_preflight_failure_requests_rollback(monkeypatch):
     database=Database()
     with pytest.raises(qa.AcceptanceFailure):qa.suite(database,uuid4())
     assert database.c.tx.rolled
+
+
+def test_schema011_qa_counts_only_granted_columns():
+    source=(Path(__file__).resolve().parents[1]/'qa/terminal_rollback.py').read_text()
+    assert 'SELECT COUNT(id) AS n FROM dbo.notifications WHERE event_key=:k' in source
+    assert 'SELECT COUNT({col}) AS n FROM dbo.{table} WHERE {col} IN' in source
+    assert 'SELECT COUNT(*) AS n FROM dbo.notifications' not in source
+    assert "SELECT COUNT(*) AS n FROM dbo.{table} WHERE {col} IN" not in source

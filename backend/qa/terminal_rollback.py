@@ -77,12 +77,12 @@ def suite(database,run):
             check(deleted['account_disabled'] and not deleted['erasure_completed'],'password_verified_account_disabled')
             for table,column,name in (('stores','id','store'),('products','id','product'),('reservations','product_id','product'),('favorites','vendor_id','vendor')):
                 check(one(c,f'SELECT COUNT(*) AS n FROM dbo.{table} WHERE {column}=:id',id=ids[name])['n']==0,'closure_removed_'+table)
-            check(one(c,"SELECT COUNT(*) AS n FROM dbo.notifications WHERE event_key=:k",k='vendor_closed:'+ids['vendor'])['n']==2,'customer_follower_union_deduplicated')
+            check(one(c,"SELECT COUNT(id) AS n FROM dbo.notifications WHERE event_key=:k",k='vendor_closed:'+ids['vendor'])['n']==2,'customer_follower_union_deduplicated')
             check(one(c,'EXEC dbo.close_vendor_business @vendor_id=:v',v=ids['vendor'])['outcome']=='closed','closure_retry_stable')
         finally:tx.rollback()
     with database.connect() as c:
         for table,col in (('users','id'),('request_results','user_id'),('notifications','user_id'),('reservation_terminals','user_id'),('favorites','user_id'),('deletion_requests','user_id')):
-            check(one(c,f'SELECT COUNT(*) AS n FROM dbo.{table} WHERE {col} IN (:a,:b,:v,:o)',a=ids['consumer'],b=ids['follower'],v=ids['vendor'],o=ids['other'])['n']==0,'rollback_zero_'+table)
+            check(one(c,f'SELECT COUNT({col}) AS n FROM dbo.{table} WHERE {col} IN (:a,:b,:v,:o)',a=ids['consumer'],b=ids['follower'],v=ids['vendor'],o=ids['other'])['n']==0,'rollback_zero_'+table)
     return results
 
 def main():
