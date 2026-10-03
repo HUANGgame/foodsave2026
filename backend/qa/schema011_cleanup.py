@@ -77,7 +77,7 @@ SCOPES = {
     'reservations': 'id IN (:o,:n) OR user_id IN (:a,:b,:v) OR product_id=:p',
     'reservation_terminals': 'reservation_id IN (:o,:n) OR user_id IN (:a,:b,:v) OR vendor_id IN (:a,:b,:v)',
     'notifications': 'user_id IN (:a,:b,:v) OR related_vendor_id IN (:a,:b,:v) OR event_key IN (:eo,:en,:lo,:ln,:cl)',
-    'request_results': "user_id IN (:a,:b,:v) OR JSON_VALUE(response,'$.id') IN (:a,:b,:v,:s,:p,:o,:n,:d) OR JSON_VALUE(response,'$.owner_id') IN (:a,:b,:v)",
+    'request_results': "user_id IN (:a,:b,:v) OR JSON_VALUE(response,'$.id') IN (:a,:b,:v,:s,:p,:o,:n,:d) OR JSON_VALUE(response,'$.owner_id') IN (:a,:b,:v) OR JSON_VALUE(response,'$.store_id')=:s OR JSON_VALUE(response,'$.snapshot.store_id')=:s",
     'deletion_requests': 'id=:d OR user_id IN (:a,:b,:v)',
     'audit_logs': 'id=:audit OR actor_id IN (:a,:b,:v) OR target_id IN (:a,:b,:v,:s,:p,:o,:n,:d)',
 }
@@ -85,7 +85,7 @@ FORBIDDEN = {
     'sessions': 'user_id IN (:a,:b,:v)',
     'favorites': 'user_id IN (:a,:b,:v) OR vendor_id IN (:a,:b,:v)',
     'reviews': 'user_id IN (:a,:b,:v) OR reservation_id IN (:o,:n)',
-    'exp_events': 'user_id IN (:a,:b,:v) OR event_key IN (:xp,:xr,:xf)',
+    'exp_events': 'user_id IN (:a,:b,:v) OR RIGHT(event_key,36) IN (:a,:b,:v,:o,:n)',
     'spin_grants': 'user_id IN (:a,:b,:v)', 'draws': 'user_id IN (:a,:b,:v)',
     'coupons': 'user_id IN (:a,:b,:v)', 'weekly_rankings': 'user_id IN (:a,:b,:v)',
     'erasure_receipts': 'request_id=:d',
@@ -98,8 +98,7 @@ DELETE_KEYS = {'request_results':('user_id','operation','request_key'), 'notific
 
 def parameters(ids):
     return dict(a=ids['consumer-a'],b=ids['consumer-b'],v=ids['vendor'],s=ids['store'],p=ids['product'],o=ids['order-seed'],n=ids['order-new'],d=ids['deletion'],audit=ids['audit'],
-                eo='expired:'+ids['order-seed'],en='expired:'+ids['order-new'],lo='vendor_out_of_stock:'+ids['order-seed'],ln='vendor_out_of_stock:'+ids['order-new'],cl='vendor_closed:'+ids['vendor'],
-                xp='pickup:'+ids['order-seed'],xr='review:'+ids['order-seed'],xf='favorite:'+ids['vendor'])
+                eo='expired:'+ids['order-seed'],en='expired:'+ids['order-new'],lo='vendor_out_of_stock:'+ids['order-seed'],ln='vendor_out_of_stock:'+ids['order-new'],cl='vendor_closed:'+ids['vendor'])
 
 
 def inspect(c, manifest, case):

@@ -229,3 +229,9 @@ def test_notification_failure_always_rolls_back_and_requires_sql_unique_error(mo
     with pytest.raises(failure.InjectionFailure,match='wrong_sql_failure'):
         failure.suite(FakeDatabase(),uuid4())
     assert not connections[-1].tx.is_active and not connections[-1].tx.committed
+
+
+def test_foreign_non_fk_references_are_in_stop_scope():
+    assert "RIGHT(event_key,36) IN (:a,:b,:v,:o,:n)" in cleanup.FORBIDDEN['exp_events']
+    assert "JSON_VALUE(response,'$.snapshot.store_id')=:s" in cleanup.SCOPES['request_results']
+    assert 'related_vendor_id IN (:a,:b,:v)' in cleanup.SCOPES['notifications']
