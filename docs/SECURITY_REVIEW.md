@@ -1,6 +1,6 @@
 # 安全補強階段：證據與剩餘缺口
 
-這是程式與mock驗證，**不是正式環境全部驗收通過**。
+目前已有本地mock、真SQL及Android fixture分區證據，**不是正式環境全部驗收通過**。下方「最新證據」為目前狀態，其餘階段紀錄保留歷史時點。
 
 前一階段：33個後端單元／API mock、10個前端單元、6個App browser合同通過；新增公開帳號頁的browser mock也通過。涵蓋刪除重試／查詢、確認勾選、密碼欄清除、跨用戶取消拒絕、角色限制、登入世代隔離與抽獎重試。未執行真SQL資料變更。
 
@@ -18,25 +18,22 @@
 
 新增非秘密環境變數：`FOODSAVE_OPERATOR_NAME`、`FOODSAVE_PRIVACY_CONTACT`、`FOODSAVE_RETENTION_SUMMARY`。未填時`/privacy`標draft、公開註冊保持關閉。不得用測試內容假裝正式政策。
 
-## 全範圍目前證據
+## 最新證據（2026-10-03，優先於下方歷史紀錄）
 
-| 範圍 | 已有證據 | 真正验收狀態 |
+真Azure結果來源為部署端執行報告，由父流程確認；此workspace未直接連線執行，並非本地mock推論。公開文件不列實際資源／身分ID或批次個資。
+
+| 範圍 | 已確認證據 | 剩餘缺口 |
 |---|---|---|
-| UI／四分頁／照片／地圖 | 靜態建置、browser合同與demo回歸紀錄 | GPS拒絕／逾時／不可用及返回商品有browser mock；Android未驗 |
-| 登入／角色／session | 單元與API mock拒絕測試、前端session隔離 | 真DB登入、跨裝置、代理節流未驗 |
-| 商品／預約／取消／核銷 | 前後端合同、快照單元、程式交易鎖 | SQL最後庫存並發、取消核銷競爭、重啟一致性未驗 |
-| 收藏／評論／EXP | 原demo邏輯與API程式／部分mock | 真DB唯一事件、彙總、營運EXP值未驗／待決策 |
-| 週排行 | 台北週界單元、可重入結算程式 | 真DB結算重跑、有效期／同分規則批准待辦 |
-| 轉盤／獎品 | mock重試一次扣除、關閉恢復、減少動畫與落點檢查 | 真SQL次數／獎品交易、真獎品履約、Android FPS未驗 |
-| 刪除帳號 | 受理／停用／查詢／返還程式與mock | owner分階段SQL清除工具已開發、預設停用；真SQL、政策與外部清除未驗 |
-| 隱私與公開註冊 | 草案頁／配置接口／未配置拒絕註冊 | 真營運資料、公開政策及Data safety未完成 |
-| 管理／DB查看 | 本地HTTP與browser mock、白名單／角色程式 | Azure部署未驗、viewer未批准；可先由owner用SQL Portal |
-| Azure SQL／migration | SQL檔及owner工具已寫、未連真DB | 執行環境網路准入／owner路徑受阻；migration和GRANT未執行 |
-| F1主機部署 | 受控ZIP、校驗碼、根目錄requirements／startup | 主機建立不等於程式部署；部署通路仍由負責人確認 |
-| APK／AAB | API36編譯、debug簽章／unsigned、manifest／ZIP／bundletool | 產物為.test合同配置；未實機安裝，不是發布版 |
-| ER／手冊 | 與現有migration／程式對照 | 尚未以真環境從頭操作驗證 |
+| Azure部署／schema／權限 | runtime部署；22 tables，migrations001–005；受限MI可用 | 重啟／還原演練尚未驗 |
+| 真SQL回滾驗收 | 15斷言passed、exit0；跨帳號拒絕、取消／核銷／到期重播、抽獎冪等、procedure權限邊界；fixture rollback | HTTP及App端整合仍未驗；取消與核銷競爭另待驗 |
+| 真SQL最後一份並發 | 兩個不同@@SPID、Barrier同步；一個201、一個409、stock0、恰1 reservation；3斷言passed、exit0 | 是Service直接呼叫；201/409為harness結果，不是實際HTTP回應 |
+| 該批owner清理 | 審閱preview digest後apply同manifest、commit exit0；刪3 synthetic users、1 store、1 product、1 reservation、1 request result | 僅QA清理，不代表營運帳號刪除政策已核准／執行 |
+| 清理後檢查 | 上述5 tables該批殘留均0；schema22 tables／001–005不變；runtime權限查詢76 rows、role memberships0不變 | 筆數不代表逐項授權內容的獨立新審查；未授runtime DELETE |
+| Android真APK＋fixture API | run37104919923 success；安裝／啟動、三角色入口與流程、鍵盤／Back、GPS拒絕／服務關閉、轉盤連點／恢復／落點／減少動畫、force-stop重登入 | 真Azure API、GPS允許／外部導航、實機FPS及完整admin CRUD未驗 |
+| APK交付 | CI v1/v2簽章、manifest與hash已驗 | CI無artifact保留；尚無本輪可下載的真API APK／正式簽署版 |
+| 隱私／營運／完整功能 | 註冊仍關閉；政策草案與owner刪除工具；65後端本地測試通過 | 真營運者／保存政策／獎品／EXP／排行／外部副本處理待確認；不可標production ready |
 
-結論：可以交接可審查程式與部署材料，不能聲稱其他項目全部驗收或production ready。未新增費用或權限，未觸碰其他資料庫。前階段未改schema，本次004僅寫入migration檔，尚未套用。
+本輪並發與清理已完成，無需為補文件重建帳號或再次執行QA。runtime及owner部署ZIP不變；後續QA批次、公開註冊和權限變更仍需各自確認範圍。
 
 ## 刪除工具階段增量
 

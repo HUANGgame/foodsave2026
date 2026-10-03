@@ -1,6 +1,6 @@
 # 正式版驗收矩陣（尚未執行）
 
-此表與現有demo測試分開。正式PASS必須有：版本／環境、帳號角色、操作步驟、UI證據、API結果、DB不變量與測試時間。所有下列項目目前為TODO或BLOCKED，不沿用demo測試冒充正式驗收。
+此表與現有demo測試分開。正式PASS必須有：版本／環境、帳號角色、操作步驟、UI證據、API結果、DB不變量與測試時間。逐列保留未完成範圍；下方最新證據記錄局部通過，不沿用demo測試冒充端到端正式驗收。
 
 | ID | 執行角色 | 操作與預期 | 現在狀態 |
 |---|---|---|---|
@@ -16,19 +16,19 @@
 | V03 | 商家 | 錯誤碼／過期碼拒絕、正確核銷一次；其他商家不能核銷 | TODO |
 | V04 | 商家 | 查待領取／已完成／未取貨，與消費者及DB一致 | TODO |
 | P01 | 產品負責人 | consumer/vendor/admin分權，跨用戶／跨店ID操作403或404 | TODO |
-| P02 | 產品負責人 | 至少兩個並發客戶端搶最後一份：最多一筆成功，庫存非負 | TODO |
+| P02 | 產品負責人 | 至少兩個並發客戶端搶最後一份：最多一筆成功，庫存非負 | 真SQL Service並發PASS；HTTP／App雙客戶端未驗 |
 | P03 | 產品負責人 | 取消與核銷競爭僅一個終態；EXP／還庫存不重發 | TODO |
 | P04 | 產品負責人 | 週排名3/2/1可調；結算重跑不重發；台北週界正確 | TODO |
 | P05 | 產品負責人 | 後端抽獎：零庫存不可中、次数與券同交易、重試不再扣 | TODO |
 | P06 | 產品負責人 | 動畫停在後端指定結果；無前台機率；關閉／重開不改結果 | TODO |
 | P06b | 產品負責人 | 連點只送同一抽獎意圖；零次數拒絕；逾時／斷網以同冪等鍵重試並讀回結果，重開不遺失券 | TODO |
-| P06c | 三角色 | Android轉盤按壓／自然減速／準確停獎／青蛙收獎；切背景與返回恢復；記錄實測順暢度及使用回饋，不捏造FPS | BLOCKED：後端與Android環境 |
+| P06c | 三角色 | Android轉盤按壓／自然減速／準確停獎／青蛙收獎；切背景與返回恢復；記錄實測順暢度及使用回饋，不捏造FPS | 部分PASS：Android fixture；真API／跨裝置或實機體驗未驗 |
 | P07 | 產品負責人 | 管理網頁及DB查看需登入；唯讀、遮罩、分頁；無公開DB或秘密 | TODO |
 | P08 | 產品負責人 | 服務／DB重啟、備份還原後資料與交易狀態一致 | TODO |
 | P09 | 產品負責人 | 真實照片／原創青蛙／清爽可愛；成功後才短促收葉子，無循環閃爍或操作阻塞；大字／44px、焦點、減少動畫 | TODO |
 | P10 | 產品負責人 | 帳號刪除、隱私資料盤點、API錯誤不洩漏秘密 | TODO |
-| A01 | 三角色 | APK安裝啟動、原生返回、鍵盤、定位權限、外部步行導航 | BLOCKED：穩定Android環境 |
-| A02 | 三角色 | Android程序停止／重啟，重新認證與跨裝置狀態一致 | BLOCKED：後端與Android環境 |
+| A01 | 三角色 | APK安裝啟動、原生返回、鍵盤、定位權限、外部步行導航 | 部分PASS：真APK fixture；真GPS／導航未驗 |
+| A02 | 三角色 | Android程序停止／重啟，重新認證與跨裝置狀態一致 | 部分PASS：Android fixture；真API／跨裝置或實機體驗未驗 |
 | R01 | 發布驗證 | API36、manifest／權限／debug flag／秘密掃描、unsigned AAB和簽署交接 | TODO |
 | R02 | 產品負責人 | 五項交付連結／文件／圖與真實schema一致；無假券或虛構合作宣稱 | TODO |
 
@@ -51,3 +51,5 @@ Android追加證據：run37103516509在commit3b87b045實際完成APK安裝／啟
 真SQL rollback驗收：部署端於2026-10-03 06:53 UTC回報15 assertions passed、exit0，執行身分為受限runtime MI、schema005、fixture最後rollback且committed_fixtures_remaining=false。來源是部署端執行報告，不是mock。P01/P03/P05/P10相關局部資料庫路徑已有真SQL證據；P02雙連線搶庫存、持久資料一致性、HTTP及Android真API整合仍待辦。
 
 Android補測：run37104919923 / f16a3a16，2026-10-03 07:06 UTC success。實際API35 emulator鍵盤輸入／Back收鍵盤、GPS拒絕／系統定位關閉回饋、原生Back回個人頁、轉盤連點一次請求／HOME恢復／210度停獎／減少動畫及歷史恢復通過；保留原三角色fixture與程序重啟驗證。A01/P06/P06b/P06c/P09部分證據增加，但GPS允許真定位、實機FPS、外部導航、真API跨裝置及完整正式驗收仍未PASS。詳見ANDROID_CI。
+
+最新真SQL並發／清理證據（2026-10-03，部署端執行、父流程確認）：不同@@SPID的兩個connection經Barrier同步，harness結果201與409，stock0且1 reservation，3 assertions passed／exit0。P02的Service／SQL不變量通過；沒有實際HTTP雙請求或Android串真API證據。owner審阅preview digest後精確apply manifest，commit exit0；移除3 synthetic users及各1 store/product/reservation/request_result，5 tables該批residual均0。schema22 tables／001–005、runtime permissions查詢76 rows／role memberships0不變。前15項rollback及Android extended fixture PASS保留；不新增QA批次、帳號或公開註冊。
