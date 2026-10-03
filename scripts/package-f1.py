@@ -32,7 +32,7 @@ def main():
     runtime = [BACKEND/'requirements.txt', BACKEND/'startup.sh']
     runtime += [BACKEND/'foodsave'/f'{name}.py' for name in RUNTIME]
     runtime += list((BACKEND/'foodsave'/'static').glob('*'))
-    owner = [BACKEND/'requirements.txt', BACKEND/'owner_migrate.py', BACKEND/'owner_erase.py']
+    owner = [BACKEND/'requirements.txt', BACKEND/'owner_migrate.py', BACKEND/'owner_erase.py', BACKEND/'qa'/'terminal_rollback.py']
     owner += [BACKEND/'foodsave'/f'{name}.py' for name in OWNER]
     owner += list((BACKEND/'migrations').glob('*.sql'))
     result = [package('foodsave-f1-code.zip', runtime), package('foodsave-owner-migrations.zip', owner)]

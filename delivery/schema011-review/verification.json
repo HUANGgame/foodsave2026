@@ -1,0 +1,70 @@
+{
+  "status": "review-only-not-deployed",
+  "source_commit": "54dd80961ec3101ac579db14ff0091571e1effd1",
+  "packages": [
+    {
+      "file": "foodsave-f1-code.zip",
+      "bytes": 28272,
+      "sha256": "70789b69029a9957702ebd58b685bc1792f84ef0ab4c36865b7581470daa92ab",
+      "entries": [
+        "foodsave/__init__.py",
+        "foodsave/admin.py",
+        "foodsave/api.py",
+        "foodsave/db.py",
+        "foodsave/diagnose.py",
+        "foodsave/ranking.py",
+        "foodsave/schemas.py",
+        "foodsave/security.py",
+        "foodsave/service.py",
+        "foodsave/static/account.html",
+        "foodsave/static/account.js",
+        "foodsave/static/admin.css",
+        "foodsave/static/admin.html",
+        "foodsave/static/admin.js",
+        "requirements.txt",
+        "startup.sh"
+      ]
+    },
+    {
+      "file": "foodsave-owner-migrations.zip",
+      "bytes": 36207,
+      "sha256": "9e4d9dc040645f826836a90cd5329a0317c81123aadbe6512e81b67e8b76e60b",
+      "entries": [
+        "foodsave/__init__.py",
+        "foodsave/admin.py",
+        "foodsave/cli.py",
+        "foodsave/db.py",
+        "foodsave/erasure.py",
+        "foodsave/migrate.py",
+        "foodsave/ranking.py",
+        "foodsave/schemas.py",
+        "foodsave/security.py",
+        "foodsave/service.py",
+        "migrations/001_core.sql",
+        "migrations/002_rankings.sql",
+        "migrations/003_deletion_requests.sql",
+        "migrations/004_erasure.sql",
+        "migrations/005_deletion_request_procedure.sql",
+        "migrations/006_store_service_mode.sql",
+        "migrations/007_notifications_and_terminal_ledger.sql",
+        "migrations/008_expire_reservation.sql",
+        "migrations/009_close_vendor_business.sql",
+        "migrations/010_report_stock_loss.sql",
+        "migrations/011_mark_notification_read.sql",
+        "owner_erase.py",
+        "owner_migrate.py",
+        "qa/terminal_rollback.py",
+        "requirements.txt"
+      ]
+    }
+  ],
+  "qa": {
+    "file": "backend/qa/terminal_rollback.py",
+    "bytes": 9341,
+    "sha256": "947d3ee939b7afa7507c0838ba426656090f6a46c0d4f19ea36540d47d476ef4"
+  },
+  "grant_review": {
+    "file": "infra/sqlserver/runtime-grant-011.review.sql",
+    "sha256": "b32224e2dc53d11fc63c8f993389aaa33c3751907f7625faa00b25f3fc7e6c25"
+  }
+}
