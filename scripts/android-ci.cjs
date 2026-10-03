@@ -65,8 +65,14 @@ async function fixture(page){
 }
 async function denyLocationDialog(){
  for(let attempt=0;attempt<4;attempt++){
-  device('shell','uiautomator','dump','/sdcard/foodsave-qa-ui.xml');
-  const xml=device('shell','cat','/sdcard/foodsave-qa-ui.xml');
+  let xml='';
+  try{
+   // A transient null accessibility root produces no file. Retry within the
+   // existing four attempts, never reuse a stale permission-dialog snapshot.
+   device('shell','rm','-f','/sdcard/foodsave-qa-ui.xml');
+   device('shell','uiautomator','dump','/sdcard/foodsave-qa-ui.xml');
+   xml=device('shell','cat','/sdcard/foodsave-qa-ui.xml');
+  }catch{console.log('Permission hierarchy not ready; bounded retry');await pause(500);continue;}
   const node=(xml.match(/<node[^>]*>/g)||[]).find(n=>/resource-id="[^"]*:id\/permission_deny_button"/.test(n));
   const bounds=node?.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);
   if(bounds){device('shell','input','tap',String(Math.floor((+bounds[1]+ +bounds[3])/2)),String(Math.floor((+bounds[2]+ +bounds[4])/2)));return;}
