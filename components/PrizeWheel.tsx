@@ -9,7 +9,7 @@ export default function PrizeWheel({spins,onResult,onError}:{spins:number;onResu
  const canResume=api.hasPending('draw');
  useEffect(()=>{mounted.current=true;Promise.all([api.request<Prize[]>('/prizes'),api.request<typeof history>('/draws')]).then(([p,h])=>{if(mounted.current){setPrizes(p);setHistory(h);}}).catch(onError);return()=>{mounted.current=false;};},[]);
  async function spin(){if(lock.current)return;lock.current=true;setBusy(true);setResult(null);setPhase('正在確認抽獎結果…');
-  try{const draw=await api.mutate<Draw>('draw','/draws',{});if(!mounted.current)return;
+  try{const draw=await api.mutate<Draw>('draw','/draws',{});onResult();if(!mounted.current)return;
    setPrizes(draw.segments);setPhase('結果已保存，正在揭曉');
    const index=draw.segments.findIndex(p=>p.id===draw.prize.id);if(index<0||draw.segments.length===0)throw new Error('獎項顯示資料不完整，請從獲獎紀錄確認。');
    const step=360/draw.segments.length,target=(360-(index+.5)*step)%360;
@@ -21,7 +21,7 @@ export default function PrizeWheel({spins,onResult,onError}:{spins:number;onResu
    const animation=wheel.current?.animate([{transform:`rotate(${angle}deg)`},{transform:`rotate(${destination}deg)`}],{duration:reduced?0:3200,easing:'cubic-bezier(.12,.72,.12,1)',fill:'forwards'});
    setAngle(destination);
    if(animation)try{await animation.finished;}catch{}
-   if(!mounted.current)return;animation?.cancel();setResult(draw);setPhase('獎品已存入獲獎紀錄');onResult();
+   if(!mounted.current)return;animation?.cancel();setResult(draw);setPhase('獎品已存入獲獎紀錄');
    setHistory(await api.request<typeof history>('/draws'));
   }catch(e){onError(e);setPhase('請重試或查看獲獎紀錄；不會因重試重複扣除。');}
   finally{lock.current=false;if(mounted.current)setBusy(false);}

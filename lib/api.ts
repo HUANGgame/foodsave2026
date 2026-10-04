@@ -1,11 +1,11 @@
-export type Account={id:string;email:string;role:'consumer'|'vendor'|'admin';exp:number;spins:number};
+export type Account={id:string;email:string;role:'consumer'|'vendor'|'admin';exp:number;spins:number;welcome_spin_awarded?:boolean;welcome_spin_available?:number};
 export type LiveProduct={id:string;store_id:string;vendor_id?:string;store_name:string;name:string;photo_url:string;latitude:number;longitude:number;original_price_minor:number;sale_price_minor:number;available_quantity:number|null;pickup_deadline:string;revision:number;active?:boolean;source?:'foodsave'|'seven-eleven'|'familymart';service_mode?:'information'|'reservation';sourceUpdatedAt?:string|null;checkedAt?:string|null;stale?:boolean;sourceURL?:string|null};
 export type LiveStore={id:string;vendor_id:string;name:string;latitude:number;longitude:number;service_mode:'information'|'reservation';product_count:number};
 export type Notice={id:string;kind:string;body:string;created_at:string;read_at:string|null};
 export type Prize={id:string;name:string;kind?:string;terms?:string;expires_at?:string;discount_percent?:number};
 export type Draw={id:string;prize:Prize;segments:{id:string;name:string}[];coupon_code?:string};
 export type Order={id:string;product_id:string;state:string;quantity:number;snapshot:string|{name:string;sale_price_minor:number};expires_at:string;pickup_code?:string;pickup_qr?:string;cancellation_reason?:'vendor_closed'|null};
-export class ApiError extends Error {constructor(public status:number,message:string){super(message);}}
+export class ApiError extends Error {constructor(public status:number,message:string,public data?:unknown,public staleSession=false){super(message);}}
 export function utc(value:string){return new Date(/[zZ]|[+-]\d\d:\d\d$/.test(value)?value:value+'Z');}
 export class FoodApi {
  private token='';private identity='';private generation=0;
@@ -17,8 +17,8 @@ export class FoodApi {
   const generation=this.generation;
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
   try{const response=await fetch(this.base+path,{method,signal:controller.signal,cache:'no-store',headers:{'Content-Type':'application/json',...(this.token?{Authorization:`Bearer ${this.token}`} : {}),...(key?{'Idempotency-Key':key}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});
-   const data=await response.json();if(generation!==this.generation)throw new ApiError(401,'登入狀態已變更，先前操作的結果不會套用到新帳號。');if(!response.ok){if(response.status===401)this.clear();throw new ApiError(response.status,data.detail||'服務暫時無法使用');}return data as T;
-  }catch(error){if(error instanceof ApiError)throw error;throw new ApiError(0,'連線未完成。請檢查網路後重試；未確認的操作會沿用原識別碼。');}finally{clearTimeout(timer);}
+   const data=await response.json();if(generation!==this.generation)throw new ApiError(401,'登入狀態已變更，先前操作的結果不會套用到新帳號。',undefined,true);if(!response.ok){if(response.status===401)this.clear();throw new ApiError(response.status,data.detail||'服務暫時無法使用',path==='/demo-draws'&&response.status===409?data:undefined);}return data as T;
+  }catch(error){if(error instanceof ApiError)throw error;if(generation!==this.generation)throw new ApiError(401,'登入狀態已變更，先前操作已忽略。',undefined,true);throw new ApiError(0,'連線未完成。請檢查網路後重試；未確認的操作會沿用原識別碼。');}finally{clearTimeout(timer);}
  }
  async login(email:string,password:string){this.clear();const session=await this.request<{access_token:string}>('/auth/login','POST',{email,password});this.token=session.access_token;const generation=++this.generation;try{const me=await this.request<Account>('/me');this.identity=me.id;return me;}catch(e){if(generation===this.generation)this.clear();throw e;}}
  async logout(){const generation=this.generation;try{await this.request('/auth/logout','POST',{});}finally{if(this.generation===generation)this.clear();}}
@@ -27,7 +27,7 @@ export class FoodApi {
   const generation=this.generation;
   const storageKey=`foodsave-pending-v1:${this.identity}:${operation}`;
   const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({path,method,body})));
-  if(generation!==this.generation)throw new ApiError(401,'登入狀態已變更，操作尚未送出。');
+  if(generation!==this.generation)throw new ApiError(401,'登入狀態已變更，操作尚未送出。',undefined,true);
   const fingerprint=Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
   let intent:{key:string;fingerprint:string};
   try{const old=localStorage.getItem(storageKey);intent=old?JSON.parse(old):{key:crypto.randomUUID(),fingerprint};if(intent.fingerprint!==fingerprint)throw new ApiError(409,'上一筆操作尚未確認，請先重試相同內容。');localStorage.setItem(storageKey,JSON.stringify(intent));}

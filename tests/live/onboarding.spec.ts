@@ -14,7 +14,7 @@ test('unassigned vendor refreshes into assigned store and uses existing first pr
   return json([]);
  });
  await page.goto('/vendor/');
- await page.getByLabel('電子郵件').fill('vendor@example.test');await page.getByLabel('密碼（至少12字元）').fill(randomUUID());await page.getByRole('button',{name:'登入',exact:true}).click();
+ await page.getByLabel('電子郵件').fill('vendor@example.test');await page.getByLabel('密碼',{exact:true}).fill(randomUUID());await page.getByRole('button',{name:'登入',exact:true}).click();
  await expect(page.getByRole('heading',{name:'等待管理者指派店家'})).toBeVisible();
  await expect(page.getByRole('button',{name:'快速上架',exact:true})).toHaveCount(0);
  await expect(page.getByRole('button',{name:'上架第一件商品',exact:true})).toHaveCount(0);

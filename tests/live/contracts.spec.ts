@@ -22,6 +22,7 @@ async function fixture(page:Page,{drop=false,spins=1,role='consumer'}={}){
   if(path==='/reservations'&&method==='GET')return json(order?[order]:[]);
   if(path==='/reservations'&&method==='POST'){stock=0;order={id:'order1',state:'waiting',product_id:productId,quantity:1,snapshot:JSON.stringify({name:'真API契約測試商品',sale_price_minor:5000}),pickup_code:'ABCDEF123456',expires_at:'2027-01-01T00:00:00'};return json(order,201);}
   if(path==='/reservations/order1/cancel'){stock=1;order.state='cancelled';return json({id:'order1',state:'cancelled'});}
+  if(path==='/demo-prizes')return json({enabled:false});
   if(path==='/prizes')return json(segments);
   if(path==='/draws'&&method==='GET')return json(draws?[{id:'draw-one',prize_snapshot:JSON.stringify(prize),coupon_code:completed.coupon_code}]:[]);
   if(path==='/draws'&&method==='POST'){requests++;keys.push(req.headers()['idempotency-key']);if(!draws)draws++;if(drop&&requests===1)return route.abort('failed');return json(completed,201);}
@@ -31,7 +32,7 @@ async function fixture(page:Page,{drop=false,spins=1,role='consumer'}={}){
  await page.route('https://images.example.test/**',r=>r.abort());
  return {keys,couponCode,get draws(){return draws;},get requests(){return requests;},get stock(){return stock;},get deleted(){return deleted;}};
 }
-async function login(page:Page){await page.getByLabel('電子郵件').fill('test@example.test');await page.getByLabel('密碼（至少12字元）').fill(passwordFixture);await page.getByRole('button',{name:'登入',exact:true}).click();await expect(page.getByRole('button',{name:'登入',exact:true})).toHaveCount(0);}
+async function login(page:Page){await page.getByLabel('電子郵件').fill('test@example.test');await page.getByLabel('密碼',{exact:true}).fill(passwordFixture);await page.getByRole('button',{name:'登入',exact:true}).click();await expect(page.getByRole('button',{name:'登入',exact:true})).toHaveCount(0);}
 
 test('live mode reserves/cancels via API and never stores a session token',async({page})=>{
  const mock=await fixture(page);await page.goto('/');await login(page);await page.getByRole('button',{name:'預約1份'}).click();await expect(page.getByText('預約成功，請到我的預約查看取貨碼。')).toBeVisible();expect(mock.stock).toBe(0);
@@ -55,7 +56,7 @@ test('wheel close/reopen recovers result; zero chances disables new draw',async(
 });
 
 test('failed API login never falls back to a demo account',async({page})=>{
- await page.route('https://api.foodsave.test/**',r=>r.fulfill({status:503,json:{detail:'SQL service unavailable'}}));await page.goto('/');await page.getByLabel('電子郵件').fill('test@example.test');await page.getByLabel('密碼（至少12字元）').fill(passwordFixture);await page.getByRole('button',{name:'登入',exact:true}).click();await expect(page.getByText('SQL service unavailable')).toBeVisible();await expect(page.getByRole('button',{name:'預約1份'})).toHaveCount(0);expect(await page.evaluate(()=>localStorage.getItem('foodsave-demo-v1'))).toBeNull();
+ await page.route('https://api.foodsave.test/**',r=>r.fulfill({status:503,json:{detail:'SQL service unavailable'}}));await page.goto('/');await page.getByLabel('電子郵件').fill('test@example.test');await page.getByLabel('密碼',{exact:true}).fill(passwordFixture);await page.getByRole('button',{name:'登入',exact:true}).click();await expect(page.getByText('SQL service unavailable')).toBeVisible();await expect(page.getByRole('button',{name:'預約1份'})).toHaveCount(0);expect(await page.evaluate(()=>localStorage.getItem('foodsave-demo-v1'))).toBeNull();
 });
 
 test('incomplete policy keeps registration closed; deletion is still only a request',async({page})=>{
@@ -73,7 +74,7 @@ test('vendor API form loads after login and sends matching product contract',asy
 for(const code of [1,2,3])test(`GPS error ${code} keeps actual API list and review return works`,async({page})=>{
  await page.addInitScript(code=>{Object.defineProperty(navigator,'geolocation',{value:{getCurrentPosition:(_ok:unknown,fail:(v:unknown)=>void)=>fail({code})}});},code);
  await fixture(page);await page.goto('/');await login(page);
- await page.getByRole('button',{name:'使用目前位置'}).click();
+ await page.getByRole('button',{name:'同意並探索附近'}).click();
  await expect(page.getByText(code===1?/未允許定位/:code===3?/定位逾時/:/目前無法取得位置/)).toBeVisible();
  await expect(page.getByRole('heading',{name:'真API契約測試商品'})).toBeVisible();
  await page.getByRole('button',{name:/則評論/}).click();await expect(page.getByText('mock評論',{exact:true})).toBeVisible();

@@ -1,5 +1,7 @@
+import {artAssets} from '../lib/art-assets';
 /** Original FoodSave mascot. Decorative; feedback is always provided in text. */
 export default function Frog({harvest=false}:{harvest?:boolean}){
+ if(artAssets.frog.src)return <img className={`foodsave-frog${harvest?' frog-harvest':''}`} src={artAssets.frog.src} alt=""/>;
  return <svg className={`foodsave-frog${harvest?' frog-harvest':''}`} viewBox="0 0 128 112" aria-hidden="true" focusable="false">
   <ellipse cx="65" cy="103" rx="39" ry="5" fill="#174f3b" opacity=".1"/>
   <g className="frog-body" stroke="#225f48" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

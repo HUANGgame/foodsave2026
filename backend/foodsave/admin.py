@@ -125,6 +125,8 @@ class AdminService(Service):
 
     def grant_spins(self, user, key, data):
         require(user, 'admin')
+        if data['source_key'].strip().casefold().startswith('welcome:'):
+            fail(422, '歡迎機會來源由首次登入管理，不能手動重發')
         def action(c):
             if not one(c, "SELECT id FROM dbo.users WHERE id=:id AND active=1 AND role='consumer'", id=data['user_id']):
                 fail(404, '找不到用戶')

@@ -48,6 +48,7 @@ async function fixture(page){
   if(path==='/reservations'&&method==='GET')return json(account==='consumer'&&order?[order]:[]);
   if(path==='/reservations'&&method==='POST'){stock--;order={id:'fixture-order',state:'waiting',quantity:1,product_id:productId,snapshot:{name:'Fixture便當',sale_price_minor:5000},pickup_code:pickup,expires_at:'2027-01-01T12:00:00'};return json(order,201);}
   if(path==='/reservations/fixture-order/cancel'){if(order.state==='waiting')stock++;order.state='cancelled';return json(order);}
+  if(path==='/demo-prizes')return json({enabled:false});
   if(path==='/prizes')return json(segments);
   if(path==='/draws'&&method==='GET')return json(draws.map(d=>({id:d.id,prize_snapshot:JSON.stringify(d.prize),coupon_code:d.coupon_code})));
   if(path==='/draws'&&method==='POST'){drawRequests++;const key=req.headers()['idempotency-key'];if(drawKeys.has(key))return json(drawKeys.get(key),201);if(draws.length>=2)return json({detail:'Fixture spins exhausted'},409);const draw={id:randomUUID(),prize,segments,coupon_code:randomUUID()};draws.push(draw);drawKeys.set(key,draw);return json(draw,201);}
@@ -63,7 +64,7 @@ async function fixture(page){
  });
  await page.route('https://images.example.test/**',r=>r.abort());
  await page.route('https://tile.openstreetmap.org/**',r=>r.abort());
- async function login(as){await page.getByLabel('電子郵件').fill(as+'@example.test');await page.getByLabel('密碼（至少12字元）').fill(password);await page.getByRole('button',{name:'登入',exact:true}).click();await expect(page.getByRole('button',{name:'登入',exact:true})).toHaveCount(0);}
+ async function login(as){await page.getByLabel('電子郵件').fill(as+'@example.test');await page.getByLabel('密碼',{exact:true}).fill(password);await page.getByRole('button',{name:'登入',exact:true}).click();await expect(page.getByRole('button',{name:'登入',exact:true})).toHaveCount(0);}
  return {login,pickup,token,confirmKeys,setVendorStage(value){vendorStage=value;},setMode(value){mode=value;},setZeroProducts(){showProducts=false;favorite=true;},restoreProducts(){showProducts=true;},setOfflineLogout(value){offlineLogout=value;},setExpiredPickup(){pickupState='expired';},get mode(){return mode;},get modeRequests(){return modeRequests;},get lossRequests(){return lossRequests;},get pickupPreviews(){return pickupPreviews;},get pickupConfirms(){return pickupConfirms;},get draws(){return draws;},get drawRequests(){return drawRequests;},get submitted(){return submitted;},get stock(){return stock;}};
 }
 async function denyLocationDialog(){
@@ -131,13 +132,15 @@ async function profileAfterResume(page){
 }
 async function nativeInteractionChecks(page,mock){
  await page.getByRole('link',{name:'探索地圖',exact:true}).click();
- await page.getByRole('button',{name:'使用目前位置'}).click();
+ if(!await page.getByRole('button',{name:'同意並探索附近'}).isVisible())await page.getByRole('button',{name:'設定附近查詢'}).click();
+ await page.getByRole('button',{name:'同意並探索附近'}).click();
  await denyLocationDialog();await expect(page.getByText(/未允許定位/)).toBeVisible();
  await expect(page.getByRole('heading',{name:'Fixture便當'})).toBeVisible();
  pass('Native Android location permission denied; Chinese feedback and fixture list remain');
  try{
   device('shell','cmd','location','set-location-enabled','false');
-  await page.getByRole('button',{name:'使用目前位置'}).click();
+  if(!await page.getByRole('button',{name:'同意並探索附近'}).isVisible())await page.getByRole('button',{name:'設定附近查詢'}).click();
+ await page.getByRole('button',{name:'同意並探索附近'}).click();
   await expect(page.getByText(/目前無法取得位置/)).toBeVisible();
   await expect(page.getByRole('heading',{name:'Fixture便當'})).toBeVisible();
   pass('Native location service disabled; actionable feedback without fake position');
@@ -201,6 +204,7 @@ async function nativeInteractionChecks(page,mock){
   await require('./account-fixture.cjs')(page,pass);
   // Restore the original home entry after the isolated account contract.
   await page.goto('https://localhost/');
+  await page.getByRole('button',{name:'先手動選地區'}).click();
   device('shell','settings','put','secure','show_ime_with_hard_keyboard','1');
   await focusEmailNatively(page);
   await expect.poll(()=>/mInputShown=true|isInputViewShown=true/.test(device('shell','dumpsys','input_method')),{timeout:15000}).toBe(true);
@@ -213,10 +217,10 @@ async function nativeInteractionChecks(page,mock){
   await mock.login('consumer');await page.getByRole('button',{name:'預約1份'}).click();await expect(page.getByText(/預約成功/)).toBeVisible();
   await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('link',{name:'我的預約',exact:true}).click();await page.getByRole('button',{name:'出示取貨碼'}).click();await expect(page.getByText(mock.pickup,{exact:true})).toBeVisible();await page.getByRole('button',{name:'取消預約',exact:true}).click();await expect(page.getByText('已取消',{exact:true})).toBeVisible();expect(mock.stock).toBe(2);
   pass('Consumer reserve, order navigation and cancellation in Android WebView (API fixture)');
-  mock.setMode('information');await page.getByRole('link',{name:'探索地圖',exact:true}).click();
+  mock.setMode('information');await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await page.getByRole('link',{name:'探索地圖',exact:true}).click();
   await expect(page.getByText('僅提供資訊，數量以現場為準')).toBeVisible();await expect(page.getByRole('button',{name:'預約1份'})).toHaveCount(0);
   pass('Information-mode product has no reservation control in installed Android WebView');
-  mock.setZeroProducts();await page.getByRole('link',{name:'我的收藏',exact:true}).click();
+  mock.setZeroProducts();await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await page.getByRole('link',{name:'我的收藏',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Fixture店家',exact:true})).toBeVisible();await expect(page.getByText('目前沒有可供應的商品，仍可收藏店家並稍後查看。')).toBeVisible();
   await page.getByRole('button',{name:'取消收藏',exact:true}).click();await expect(page.getByRole('heading',{name:'這裡還沒有可用的好店'})).toBeVisible();
   pass('Vendor-account favorite remains visible without products and can be removed');
@@ -228,7 +232,7 @@ async function nativeInteractionChecks(page,mock){
   await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('link',{name:'我的預約',exact:true}).click();await expect(page.getByText('目前沒有預約。')).toBeVisible();
   pass('Offline account switch clears local login; second consumer sees neither first account orders nor notices');
   mock.setOfflineLogout(false);mock.restoreProducts();mock.setMode('reservation');
-  await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('button',{name:'切換帳號',exact:true}).click();await mock.login('vendor');
+  await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('button',{name:'切換商家',exact:true}).click();await expect(page.getByRole('heading',{name:'登入另一個商家帳號'})).toBeVisible();await mock.login('vendor');pass('Targeted merchant switch logs into a separate existing vendor account');
   mock.setVendorStage('unassigned');await page.getByRole('link',{name:'商家工作台',exact:true}).click();
   await expect(page.getByRole('heading',{name:'等待管理者指派店家'})).toBeVisible();await expect(page.getByRole('button',{name:'快速上架',exact:true})).toHaveCount(0);
   mock.setVendorStage('empty');await page.getByRole('button',{name:'重新載入商家資料'}).click();await expect(page.getByRole('heading',{name:'等待管理者指派店家'})).toHaveCount(0);await expect(page.getByRole('heading',{name:'開始上架第一件商品'})).toBeVisible();await page.getByRole('button',{name:'上架第一件商品',exact:true}).click();await expect(page.getByLabel('商品名稱',{exact:true})).toBeVisible();
@@ -278,10 +282,10 @@ async function nativeInteractionChecks(page,mock){
     return Promise.resolve({status:200,headers:{},url:options.url,data:{code:1,data:[{oldPKey:'00123',name:'Android 合成全家',address:'合成契約地址',latitude:25.0375,longitude:121.5636,updateDate:'2026-10-03 19:10:01',info:[{categories:[{qty:999,products:[{code:'0001',name:'Android 合成友善便當',qty:2},{code:'0002',name:'Android 未知數量商品'}]}]}]}]}});
    };
   });
-  await page.getByRole('link',{name:'超商資訊',exact:true}).click();await expect(page.getByRole('heading',{name:'超商惜食資訊',exact:true})).toBeVisible();
+  await page.evaluate(()=>{history.pushState(null,'','/convenience/');window.dispatchEvent(new PopStateEvent('popstate'));});await expect(page.getByRole('heading',{name:'超商惜食資訊',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'查詢全家公開區域'}).click();await expect(page.getByRole('heading',{name:'Android 合成全家',exact:true})).toBeVisible();await expect(page.getByText('2份（來源回報）',{exact:true})).toBeVisible();await expect(page.getByText('數量未知',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'顯示公開區域地圖'}).click();await expect(page.getByLabel('附近店家地圖')).toBeVisible();await expect(page.locator('.store-marker')).toContainText('？');
-  await expect(page.getByText('折扣以門市結帳為準。')).toBeVisible();await expect(page.getByRole('button',{name:/預約|核銷|取貨/})).toHaveCount(0);
+  await expect(page.getByText('折扣與售價依門市結帳為準').first()).toBeVisible();await expect(page.getByRole('button',{name:/預約|核銷|取貨/})).toHaveCount(0);
   await page.getByRole('button',{name:'查詢全家公開區域'}).click();expect(await page.evaluate(()=>window.__qaFamilyCalls)).toBe(1);
   await page.getByLabel('手動選擇公開地區').selectOption('kaohsiung-lingya-v1');
   await expect(page.getByText('查詢區域：高雄市苓雅區')).toBeVisible();await expect(page.getByRole('heading',{name:'Android 合成全家',exact:true})).toHaveCount(0);

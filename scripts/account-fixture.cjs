@@ -55,7 +55,7 @@ module.exports=async function accountFixture(page,pass){
   await fillSecret(code,replacement);await page.getByRole('button',{name:'確認重設密碼'}).click();
   await expect(page.getByText('已完成。請使用新密碼重新登入。')).toBeVisible();
   await page.getByRole('button',{name:'返回登入'}).click();
-  async function login(value){await page.getByLabel('電子郵件').fill(email);await page.getByLabel('密碼（至少12字元）').fill(value);await page.getByRole('button',{name:'登入',exact:true}).click();}
+  async function login(value){await page.getByLabel('電子郵件').fill(email);await page.getByLabel('密碼',{exact:true}).fill(value);await page.getByRole('button',{name:'登入',exact:true}).click();}
   await login(initial);await expect(page.getByText('Fixture：帳號或密碼錯誤')).toBeVisible();
   await login(replacement);await expect(page.getByRole('button',{name:'登入',exact:true})).toHaveCount(0);
   pass('Account fixture: invalid reset rejected, successful reset accepts new login and rejects old password');

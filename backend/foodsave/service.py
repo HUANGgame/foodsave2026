@@ -1,3 +1,4 @@
+from . import welcome
 import hmac
 import os
 import json
@@ -90,6 +91,8 @@ class Service:
                 upgraded=one(c,'EXEC dbo.apply_account_password @user_id=:u,@expected_hash=:old,@new_hash=:new,@verify_email=0',u=user['id'],old=user['password_hash'],new=hash_password(password))
                 if not upgraded or upgraded['changed']!=1:
                     fail(401,'帳號或密碼不正確')
+            if os.getenv('FOODSAVE_WELCOME_SPIN_ENABLED')=='true':
+                welcome.grant_once(c,user['id'])
             token = secrets.token_urlsafe(32)
             execute(c, 'INSERT INTO dbo.sessions(token_hash,user_id,expires_at) VALUES(:h,:u,DATEADD(hour,12,SYSUTCDATETIME()))', h=digest(token), u=user['id'])
             return {'access_token': token, 'token_type': 'bearer', 'expires_in': 43200}
@@ -268,7 +271,7 @@ class Service:
 
     def account(self, user):
         with self.transaction() as c:
-            return {**user, 'exp': one(c, 'SELECT COALESCE(SUM(amount),0) AS total FROM dbo.exp_events WHERE user_id=:u', u=user['id'])['total'],
+            return {**user, **(welcome.status(c,user['id']) if os.getenv('FOODSAVE_WELCOME_SPIN_ENABLED')=='true' else {}), 'exp': one(c, 'SELECT COALESCE(SUM(amount),0) AS total FROM dbo.exp_events WHERE user_id=:u', u=user['id'])['total'],
                     'spins': one(c, 'SELECT COALESCE(SUM(remaining),0) AS total FROM dbo.spin_grants WHERE user_id=:u AND expires_at>SYSUTCDATETIME()', u=user['id'])['total']}
 
     def history(self, user, resource):

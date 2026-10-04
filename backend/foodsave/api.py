@@ -14,6 +14,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from .admin import AdminService
 from .db import one
 from . import schemas as S
+from . import demo_prizes
 from .ranking import RankingService
 from .service import require
 from .accounts import AccountService
@@ -478,3 +479,29 @@ def admin_script():
 @app.get('/admin.css')
 def admin_style():
     return FileResponse(Path(__file__).parent / 'static' / 'admin.css', media_type='text/css')
+
+
+@app.get('/demo-prizes')
+def demo_pool():
+    if not demo_prizes.enabled():
+        return {'enabled': False}
+    return demo_prizes.public(demo_prizes.read())
+
+
+@app.get('/admin/demo-prizes')
+def demo_pool_admin(user: User):
+    require(user, 'admin')
+    return demo_prizes.read()
+
+
+@app.put('/admin/demo-prizes')
+def demo_pool_edit(body: demo_prizes.DemoPoolUpdate, user: User):
+    require(user, 'admin')
+    return demo_prizes.update(body)
+
+
+@app.post('/demo-draws')
+def demo_draw(body: demo_prizes.DemoDrawRequest, user: User):
+    require(user, 'consumer')
+    result = demo_prizes.draw(body.revision)
+    return JSONResponse(status_code=409, content=result) if result.get('code')=='pool_changed' else result

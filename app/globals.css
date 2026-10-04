@@ -19,3 +19,13 @@ h1,h2,h3,h4{font-weight:700}.welcome-strip{display:flex;align-items:center;justi
 .merchant-actions {display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}.merchant-actions button{padding:12px 6px;min-height:52px}.pickup-big{display:block;width:100%;min-height:56px;margin:12px 0;font-size:1.15rem}.pickup-camera video{width:100%;max-height:340px;object-fit:cover;border-radius:16px;background:#18291d}.pickup-qr{display:block;max-width:100%;height:auto;margin:auto;background:#fff}.pickup-summary{font-size:1.3rem;font-weight:700}.pickup-card strong{font-size:1.3rem;overflow-wrap:anywhere}.live-form details summary{min-height:44px;padding:12px 0;cursor:pointer}.live-app button,.live-app .secondary,.live-app .primary{min-height:44px}
 
 .live-map-canvas{height:320px;min-height:320px;border-radius:16px;margin:16px 0}
+
+/* Accessible account actions: recovery and first-time registration have separate zones. */
+.password-field{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:8px}.password-field label{min-width:0}.password-field input{width:100%;box-sizing:border-box}.password-toggle{min-width:56px;min-height:48px;border:1px solid #b9cfc2;border-radius:12px;background:#fff;color:#14583f;font:inherit}.login-recovery{display:flex;justify-content:flex-end;padding:12px 0 24px}.register-entry{border-top:1px solid #d6e3db;padding:24px 0;margin:0 0 24px}.register-entry .secondary{width:100%;min-height:48px}.role-badge{display:inline-block;border-radius:12px;padding:8px 14px;background:#e4f2e8;color:#155a3d}.role-vendor{background:#fff0d6;color:#735019}.verification-code{font-family:monospace;letter-spacing:.02em;font-size:16px}.bottom-nav{grid-template-columns:repeat(4,minmax(0,1fr))}
+.art-icon{display:inline-block;width:24px;height:24px;object-fit:contain;vertical-align:middle}.demo-wheel .wheel-label{display:flex;flex-direction:column;align-items:center;gap:3px}.demo-notice{display:inline-block;font-weight:700;padding:9px 16px;border:2px dashed #83621c;border-radius:12px;background:#fff1cc;color:#604511}.demo-result{max-width:min(90vw,420px);border:0;border-radius:24px;padding:28px;text-align:center;color:#184f3a;background:#fffdf4}.demo-result::backdrop{background:#163f365c}.demo-result .art-icon{width:60px;height:60px;display:block;margin:16px auto}
+.art-icon .foodsave-frog{width:100%;height:100%}
+.demo-result{inset:0;margin:auto;width:min(90vw,420px);max-height:90dvh;overflow:auto}
+/* Keep password controls aligned and vendor mode cards in normal block flow. */
+.live-form .password-field label{margin:0}.password-field{margin:14px 0}.password-toggle{height:50px}
+.live-app label.card{display:block}
+.live-form .password-field input{margin-bottom:0}

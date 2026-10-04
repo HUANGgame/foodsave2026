@@ -25,7 +25,7 @@ async function setup(page:any,drop=false,state='completed'){let previews=0,confi
    const stream=canvas.captureStream(10);for(const track of stream.getTracks()){const stop=track.stop.bind(track);track.stop=()=>{state.stops++;stop();};}return stream;
   }});
  },{qr});
- await page.goto('/vendor/');await page.getByLabel('電子郵件').fill('vendor@example.test');await page.getByLabel('密碼（至少12字元）').fill(password);await page.getByRole('button',{name:'登入',exact:true}).click();await expect(page.getByRole('heading',{name:'商家工作台'})).toBeVisible();
+ await page.goto('/vendor/');await page.getByLabel('電子郵件').fill('vendor@example.test');await page.getByLabel('密碼',{exact:true}).fill(password);await page.getByRole('button',{name:'登入',exact:true}).click();await expect(page.getByRole('heading',{name:'商家工作台'})).toBeVisible();
  return {keys,get previews(){return previews;},get confirmations(){return confirmations;},get stockCalls(){return stockCalls;}};
 }
 
