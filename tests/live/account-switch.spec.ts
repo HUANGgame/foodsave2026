@@ -1,7 +1,7 @@
 import {test,expect,Page} from '@playwright/test';
 import {randomUUID} from 'node:crypto';
 async function login(page:Page,email:string){await page.getByLabel('電子郵件').fill(email);await page.getByLabel('密碼',{exact:true}).fill(randomUUID());await page.getByRole('button',{name:'登入',exact:true}).click();}
-for(const late of ['success','unauthorized','network'] as const)test(`merchant switch isolates late ${late} response and private caches`,async({page})=>{
+for(const late of ['success','unauthorized','network'] as const)test(`account switch isolates late ${late} response and private caches`,async({page})=>{
  let current='customer',hold=false,held=false,release=()=>{};
  await page.clock.install();
  await page.route('https://api.foodsave.test/**',async r=>{
@@ -24,12 +24,11 @@ for(const late of ['success','unauthorized','network'] as const)test(`merchant s
  await page.getByRole('link',{name:'我的收藏',exact:true}).click();await expect(page.getByRole('heading',{name:'PRIVATE OLD FAVORITE'})).toBeVisible();
  await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('link',{name:/通知中心/}).click();await expect(page.getByText('PRIVATE OLD NOTICE')).toBeVisible();
  await page.getByRole('link',{name:'個人中心',exact:true}).click();hold=true;await page.clock.fastForward(30000);await expect.poll(()=>held).toBe(true);
- await page.getByRole('button',{name:'切換商家',exact:true}).click();await expect(page.getByRole('heading',{name:'登入另一個商家帳號'})).toBeVisible();
- await login(page,'customer@example.test');await expect(page.getByText(/帳號身分不符/)).toBeVisible();await expect(page.getByRole('heading',{name:'登入另一個商家帳號'})).toBeVisible();
+ await page.getByRole('button',{name:'切換帳號',exact:true}).click();await expect(page.getByRole('heading',{name:'歡迎回來'})).toBeVisible();
  await login(page,'vendor@example.test');await expect(page.getByText('商家・合作店家',{exact:true})).toBeVisible();release();await page.waitForTimeout(100);
  await expect(page.getByText('商家・合作店家',{exact:true})).toBeVisible();await expect(page.getByText(/old account expired|連線未完成/)).toHaveCount(0);
  await page.getByRole('link',{name:/通知中心/}).click();await expect(page.getByText('目前沒有通知。')).toBeVisible();await expect(page.getByText('PRIVATE OLD NOTICE')).toHaveCount(0);await expect(page.getByText('PRIVATE LATE NOTICE')).toHaveCount(0);
  await page.getByRole('link',{name:'我的收藏',exact:true}).click();await expect(page.getByRole('heading',{name:'PRIVATE OLD FAVORITE'})).toHaveCount(0);await page.evaluate(()=>{history.pushState(null,'','/reservations/');window.dispatchEvent(new PopStateEvent('popstate'));});await expect(page.getByText('目前沒有預約。')).toBeVisible();await expect(page.getByText('PRIVATE OLD ORDER')).toHaveCount(0);
- await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('button',{name:'切換消費者',exact:true}).click();await expect(page.getByRole('heading',{name:'登入另一個消費者帳號'})).toBeVisible();
+ await page.getByRole('link',{name:'個人中心',exact:true}).click();await page.getByRole('button',{name:'切換帳號',exact:true}).click();await expect(page.getByRole('heading',{name:'歡迎回來'})).toBeVisible();
  const storage=await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}));expect(storage).not.toContain('example.test');expect(storage).not.toContain('PRIVATE OLD NOTICE');
 });

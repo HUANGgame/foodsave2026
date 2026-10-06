@@ -29,3 +29,6 @@ h1,h2,h3,h4{font-weight:700}.welcome-strip{display:flex;align-items:center;justi
 .live-form .password-field label{margin:0}.password-field{margin:14px 0}.password-toggle{height:50px}
 .live-app label.card{display:block}
 .live-form .password-field input{margin-bottom:0}
+
+/* Store position edits remain explicit drafts until confirmed. */
+.location-map{height:280px;border-radius:16px;overflow:hidden;z-index:1;margin:12px 0}.location-pin{font-size:34px;text-align:center;line-height:44px;cursor:grab}.location-pin:focus-visible{outline:3px solid #e99b28}.merchant-entry{white-space:nowrap}

@@ -1,25 +1,41 @@
-export type Account={id:string;email:string;role:'consumer'|'vendor'|'admin';exp:number;spins:number;welcome_spin_awarded?:boolean;welcome_spin_available?:number};
+export type Account={id:string;email:string;role:'consumer'|'vendor'|'admin';is_vendor?:boolean;exp:number;spins:number;welcome_spin_awarded?:boolean;welcome_spin_available?:number};
 export type LiveProduct={id:string;store_id:string;vendor_id?:string;store_name:string;name:string;photo_url:string;latitude:number;longitude:number;original_price_minor:number;sale_price_minor:number;available_quantity:number|null;pickup_deadline:string;revision:number;active?:boolean;source?:'foodsave'|'seven-eleven'|'familymart';service_mode?:'information'|'reservation';sourceUpdatedAt?:string|null;checkedAt?:string|null;stale?:boolean;sourceURL?:string|null};
 export type LiveStore={id:string;vendor_id:string;name:string;latitude:number;longitude:number;service_mode:'information'|'reservation';product_count:number};
 export type Notice={id:string;kind:string;body:string;created_at:string;read_at:string|null};
 export type Prize={id:string;name:string;kind?:string;terms?:string;expires_at?:string;discount_percent?:number};
 export type Draw={id:string;prize:Prize;segments:{id:string;name:string}[];coupon_code?:string};
-export type Order={id:string;product_id:string;state:string;quantity:number;snapshot:string|{name:string;sale_price_minor:number};expires_at:string;pickup_code?:string;pickup_qr?:string;cancellation_reason?:'vendor_closed'|null};
+export type Order={id:string;product_id:string;state:string;quantity:number;snapshot:string|{name:string;sale_price_minor:number;latitude?:number;longitude?:number;location_revision?:number};expires_at:string;pickup_code?:string;pickup_qr?:string;cancellation_reason?:'vendor_closed'|null};
+export class RequestCancelled extends Error {constructor(){super('Request superseded');}}
 export class ApiError extends Error {constructor(public status:number,message:string,public data?:unknown,public staleSession=false){super(message);}}
 export function utc(value:string){return new Date(/[zZ]|[+-]\d\d:\d\d$/.test(value)?value:value+'Z');}
 export class FoodApi {
- private token='';private identity='';private generation=0;
+ private token='';private identity='';private generation=0;private retryBodies=new Map<string,unknown>();
  constructor(readonly base:string){}
+ get sessionVersion(){return this.generation;}
+ pendingBody<T>(operation:string):T|undefined{return this.retryBodies.get(`foodsave-pending-v1:${this.identity}:${operation}`) as T|undefined;}
  get authenticated(){return Boolean(this.token);}
  hasPending(operation:string){try{return Boolean(this.identity&&localStorage.getItem(`foodsave-pending-v1:${this.identity}:${operation}`));}catch{return false;}}
  clear(){this.token='';this.identity='';this.generation++;}
- async request<T>(path:string,method='GET',body?:unknown,key?:string):Promise<T>{
+ async request<T>(path:string,method='GET',body?:unknown,key?:string,signal?:AbortSignal):Promise<T>{
   const generation=this.generation;
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
-  try{const response=await fetch(this.base+path,{method,signal:controller.signal,cache:'no-store',headers:{'Content-Type':'application/json',...(this.token?{Authorization:`Bearer ${this.token}`} : {}),...(key?{'Idempotency-Key':key}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});
-   const data=await response.json();if(generation!==this.generation)throw new ApiError(401,'登入狀態已變更，先前操作的結果不會套用到新帳號。',undefined,true);if(!response.ok){if(response.status===401)this.clear();throw new ApiError(response.status,data.detail||'服務暫時無法使用',path==='/demo-draws'&&response.status===409?data:undefined);}return data as T;
-  }catch(error){if(error instanceof ApiError)throw error;if(generation!==this.generation)throw new ApiError(401,'登入狀態已變更，先前操作已忽略。',undefined,true);throw new ApiError(0,'連線未完成。請檢查網路後重試；未確認的操作會沿用原識別碼。');}finally{clearTimeout(timer);}
+  const cancel=()=>controller.abort();signal?.addEventListener('abort',cancel,{once:true});
+  try{if(signal?.aborted)throw new RequestCancelled();const response=await fetch(this.base+path,{method,signal:controller.signal,cache:'no-store',headers:{'Content-Type':'application/json',...(this.token?{Authorization:`Bearer ${this.token}`} : {}),...(key?{'Idempotency-Key':key}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});
+   const data=await response.json();if(signal?.aborted)throw new RequestCancelled();if(generation!==this.generation)throw new ApiError(401,'登入狀態已變更，先前操作的結果不會套用到新帳號。',undefined,true);if(!response.ok){if(response.status===401)this.clear();throw new ApiError(response.status,data.detail||'服務暫時無法使用',path==='/demo-draws'&&response.status===409?data:undefined);}return data as T;
+  }catch(error){if(signal?.aborted||error instanceof RequestCancelled)throw new RequestCancelled();if(error instanceof ApiError)throw error;if(generation!==this.generation)throw new ApiError(401,'登入狀態已變更，先前操作已忽略。',undefined,true);throw new ApiError(0,'連線未完成。請檢查網路後重試；未確認的操作會沿用原識別碼。');}finally{clearTimeout(timer);signal?.removeEventListener('abort',cancel);}
  }
+ // These two operations have database uniqueness / revision guards. Never use this
+ // reconciliation path for rewards, stock deltas, reservations, or other mutations.
+ private async reconcileGuardedStoreIntent<T>(operation:string,path:string):Promise<T>{
+  if(!this.identity)throw new ApiError(401,'請先登入');
+  const generation=this.generation,storageKey=`foodsave-pending-v1:${this.identity}:${operation}`,intent=localStorage.getItem(storageKey);
+  const current=await this.request<T>(path);
+  if(generation!==this.generation)throw new ApiError(401,'登入狀態已變更，請重新核對。',undefined,true);
+  if(localStorage.getItem(storageKey)!==intent)throw new ApiError(409,'操作狀態已變更，請重新核對。');
+  localStorage.removeItem(storageKey);this.retryBodies.delete(storageKey);return current;
+ }
+ reconcileStoreCreation(){return this.reconcileGuardedStoreIntent<Account>('store.create','/me');}
+ reconcileStoreLocation<T>(storeId:string){return this.reconcileGuardedStoreIntent<T>(`store-location:${storeId}`,`/vendor/stores/${storeId}/location`);}
  async login(email:string,password:string){this.clear();const session=await this.request<{access_token:string}>('/auth/login','POST',{email,password});this.token=session.access_token;const generation=++this.generation;try{const me=await this.request<Account>('/me');this.identity=me.id;return me;}catch(e){if(generation===this.generation)this.clear();throw e;}}
  async logout(){const generation=this.generation;try{await this.request('/auth/logout','POST',{});}finally{if(this.generation===generation)this.clear();}}
  async mutate<T>(operation:string,path:string,body:unknown,method='POST'):Promise<T>{
@@ -32,8 +48,9 @@ export class FoodApi {
   let intent:{key:string;fingerprint:string};
   try{const old=localStorage.getItem(storageKey);intent=old?JSON.parse(old):{key:crypto.randomUUID(),fingerprint};if(intent.fingerprint!==fingerprint)throw new ApiError(409,'上一筆操作尚未確認，請先重試相同內容。');localStorage.setItem(storageKey,JSON.stringify(intent));}
   catch(error){if(error instanceof ApiError)throw error;throw new ApiError(0,'無法安全保留重試識別碼，操作尚未送出。請開啟裝置儲存權限。');}
-  try{const result=await this.request<T>(path,method,body,intent.key);localStorage.removeItem(storageKey);return result;}
-  catch(error){if(error instanceof ApiError&&error.status>=400&&error.status<500&&error.status!==401&&error.status!==408&&error.status!==429){localStorage.removeItem(storageKey);}throw error;}
+  this.retryBodies.set(storageKey,JSON.parse(JSON.stringify(body)));
+  try{const result=await this.request<T>(path,method,body,intent.key);localStorage.removeItem(storageKey);this.retryBodies.delete(storageKey);return result;}
+  catch(error){if(error instanceof ApiError&&error.status>=400&&error.status<500&&error.status!==401&&error.status!==408&&error.status!==429){localStorage.removeItem(storageKey);this.retryBodies.delete(storageKey);}throw error;}
  }
 }
 const rawBase=process.env.NEXT_PUBLIC_API_BASE_URL||'';
