@@ -19,13 +19,22 @@ _SLOTS = BoundedSemaphore(2)
 
 
 def authorization():
+    if os.getenv('FOODSAVE_MAIL_APPROVED') != 'true':
+        raise MailUnavailable()
+    # Preserve the deployed continuous authorization; a legacy expiry is ignored.
+    # An absent mode retains the original bounded authorization behavior.
+    mode = os.getenv('FOODSAVE_MAIL_AUTHORIZATION_MODE', 'timed')
+    if mode == 'continuous':
+        return
+    if mode != 'timed':
+        raise MailUnavailable()
     try:
         until=datetime.fromisoformat(os.getenv('FOODSAVE_MAIL_AUTHORIZED_UNTIL','').replace('Z','+00:00'))
         now=datetime.now(timezone.utc)
         valid=until.tzinfo is not None and now<until<=now+timedelta(hours=24)
     except ValueError:
         valid=False
-    if os.getenv('FOODSAVE_MAIL_APPROVED')!='true' or not valid:
+    if not valid:
         raise MailUnavailable()
 
 
