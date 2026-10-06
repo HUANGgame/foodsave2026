@@ -130,7 +130,7 @@ def ready(svc: Svc):
     for attempt in range(2):
         try:
             with svc.transaction() as c:
-                version="012_account_lifecycle.sql" if os.getenv("FOODSAVE_ACCOUNT_LIFECYCLE_ENABLED")=="true" else "011_mark_notification_read.sql"
+                version="014_store_location.sql"
                 found = one(c, "SELECT version FROM dbo.schema_migrations WHERE version=:version",version=version)
                 if not found:
                     raise HTTPException(503, '資料庫尚未初始化')
@@ -265,6 +265,16 @@ def me(user: User, svc: Svc):
 @app.get('/products')
 def products(svc: Svc):
     return svc.list_products()
+
+
+@app.get('/nearby/stores')
+def nearby_stores(query: Annotated[S.NearbyQuery, Query()], user: User, svc: Svc):
+    return svc.nearby_stores(**query.model_dump())
+
+
+@app.get('/nearby/products')
+def nearby_products(query: Annotated[S.NearbyProductsQuery, Query()], user: User, svc: Svc):
+    return svc.nearby_products(**query.model_dump())
 
 
 @app.get('/prizes')
@@ -414,6 +424,16 @@ def product_create(body: S.Product, user: User, svc: Svc, key: Key):
 @app.put('/vendor/products/{identity}')
 def product_update(identity: str, body: S.Product, user: User, svc: Svc, key: Key):
     return svc.save_product(user, key, body.model_dump(), identity)
+
+
+@app.get('/vendor/stores/{identity}/location')
+def store_location(identity: str, user: User, svc: Svc):
+    return svc.store_location(user, identity)
+
+
+@app.put('/vendor/stores/{identity}/location')
+def save_store_location(identity: str, body: S.StoreLocation, user: User, svc: Svc, key: Key):
+    return svc.save_store_location(user, key, identity, body.model_dump())
 
 
 @app.put('/vendor/stores/{identity}/mode')

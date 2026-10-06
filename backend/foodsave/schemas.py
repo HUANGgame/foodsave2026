@@ -126,6 +126,24 @@ class OwnStore(Strict):
     longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
 
 
+class StoreLocation(Strict):
+    latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
+    expected_revision: int = Field(ge=1, strict=True)
+    confirm: Literal['SAVE_LOCATION']
+
+
+class NearbyQuery(Strict):
+    latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
+    limit: int = Field(default=50, ge=1, le=100)
+    cursor: str | None = Field(default=None, max_length=768)
+
+
+class NearbyProductsQuery(NearbyQuery):
+    store_id: str | None = Field(default=None, pattern=r'^[a-f0-9-]{36}$')
+
+
 class Store(OwnStore):
     owner_id: str = Field(pattern=r'^[a-f0-9-]{36}$')
 

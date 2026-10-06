@@ -1,4 +1,4 @@
-from . import welcome
+from . import welcome, nearby
 import hmac
 import os
 import json
@@ -141,6 +141,10 @@ class Service:
     def _authorize_cached_order(self, c, user, operation, payload, cached):
         # A previous success is not an authorization grant. Recheck even for
         # legacy cached replies before returning pickup credentials or receipts.
+        if operation == 'store-location':
+            if not one(c, 'SELECT id FROM dbo.stores WHERE id=:id AND owner_id=:u', id=payload['id'], u=user['id']):
+                fail(404, '找不到此商家店舖')
+            return
         if operation not in ('reserve', 'transition', 'pickup-preview', 'pickup-confirm', 'review'):
             return
         merchant = operation in ('pickup-preview', 'pickup-confirm') or (operation == 'transition' and payload['target'] == 'completed')
@@ -166,11 +170,13 @@ class Service:
             p = one(c, 'SELECT * FROM dbo.products WITH(UPDLOCK,HOLDLOCK) WHERE id=:p AND active=1 AND pickup_deadline>SYSUTCDATETIME()', p=product_id)
             if not p:
                 fail(404, '商品不存在或已截止')
-            store = one(c, 'SELECT owner_id,service_mode,latitude,longitude FROM dbo.stores WITH(UPDLOCK,HOLDLOCK) WHERE id=:id', id=p['store_id'])
+            store = one(c, 'SELECT owner_id,service_mode,latitude,longitude,location_revision,location_confirmed FROM dbo.stores WITH(UPDLOCK,HOLDLOCK) WHERE id=:id', id=p['store_id'])
             if store and store['owner_id'] == user['id']:
                 fail(403, '不能預約自己的商品')
             if not store or store['service_mode'] != 'reservation':
                 fail(409, '此店僅提供庫存資訊，不能在App保留商品；請以現場為準')
+            if not store['location_confirmed']:
+                fail(409, '店家尚未確認取貨位置')
             for old in rows(c, "SELECT TOP (25) id FROM dbo.reservations WHERE product_id=:p AND state IN ('waiting','expired') AND expires_at<=SYSUTCDATETIME() ORDER BY expires_at,id",p=product_id):
                 one(c, 'EXEC dbo.expire_reservation @reservation_id=:id',id=old['id'])
             result = execute(c, 'UPDATE dbo.products SET available_quantity=available_quantity-:q,revision=revision+1 WHERE id=:p AND available_quantity>=:q', p=product_id, q=quantity)
@@ -182,7 +188,7 @@ class Service:
             expiry = min(now + timedelta(minutes=30), p['pickup_deadline'])
             snapshot = {k: p[k] for k in ('name','store_id','original_price_minor','sale_price_minor','photo_url')}
             if store:
-                snapshot.update(latitude=float(store['latitude']), longitude=float(store['longitude']))
+                snapshot.update(latitude=float(store['latitude']), longitude=float(store['longitude']), location_revision=store['location_revision'])
             execute(c, "INSERT INTO dbo.reservations(id,user_id,product_id,state,quantity,snapshot,pickup_code_hash,expires_at) VALUES(:id,:u,:p,'waiting',:q,:snapshot,:code,:expiry)",
                     id=identity, u=user['id'], p=product_id, q=quantity, snapshot=dump(snapshot), code=digest(code), expiry=expiry)
             return {'id': identity, 'state': 'waiting', 'quantity': quantity, 'pickup_code': code, 'pickup_qr': qr, 'expires_at': expiry, 'snapshot': snapshot}
@@ -301,13 +307,31 @@ class Service:
     def list_products(self):
         self.expire_reservations(limit=25)
         with self.transaction() as c:
-            products = rows(c, "SELECT p.id,p.store_id,s.name AS store_name,s.owner_id AS vendor_id,s.latitude,s.longitude,s.service_mode,p.name,p.photo_url,p.original_price_minor,p.sale_price_minor,p.available_quantity,p.pickup_deadline,p.revision,updates.source_updated_at,SYSUTCDATETIME() AS checked_at FROM dbo.products p JOIN dbo.stores s ON s.id=p.store_id OUTER APPLY (SELECT MAX(q.created_at) AS source_updated_at FROM dbo.request_results q WHERE q.operation IN ('product.save','stock-adjust','stock-loss') AND JSON_VALUE(q.response,'$.id')=p.id) updates WHERE p.active=1 AND p.pickup_deadline>SYSUTCDATETIME() ORDER BY p.id OFFSET 0 ROWS FETCH NEXT 200 ROWS ONLY")
+            products = rows(c, "SELECT p.id,p.store_id,s.name AS store_name,s.owner_id AS vendor_id,s.latitude,s.longitude,s.service_mode,p.name,p.photo_url,p.original_price_minor,p.sale_price_minor,p.available_quantity,p.pickup_deadline,p.revision,updates.source_updated_at,SYSUTCDATETIME() AS checked_at FROM dbo.products p JOIN dbo.stores s ON s.id=p.store_id JOIN dbo.users u ON u.id=s.owner_id OUTER APPLY (SELECT MAX(q.created_at) AS source_updated_at FROM dbo.request_results q WHERE q.operation IN ('product.save','stock-adjust','stock-loss') AND JSON_VALUE(q.response,'$.id')=p.id) updates WHERE s.location_confirmed=1 AND u.active=1 AND u.role IN ('consumer','vendor') AND p.active=1 AND p.pickup_deadline>SYSUTCDATETIME() ORDER BY p.id")
             result=[]
             for row in products:
                 item=dict(row);updated=item.pop('source_updated_at');checked=item.pop('checked_at')
                 item.update(source='foodsave', sourceUpdatedAt=updated, checkedAt=checked, stale=updated is None or checked-updated>timedelta(minutes=30), sourceURL=None)
                 result.append(item)
             return result
+
+    def nearby_stores(self, latitude, longitude, limit=50, cursor=None):
+        parameters, scope = nearby.parameters('stores', latitude, longitude, limit, cursor)
+        with self.transaction() as c:
+            items = rows(c, nearby.STORES_SQL, **parameters)
+        return nearby.page(items, limit, scope)
+
+    def nearby_products(self, latitude, longitude, limit=50, cursor=None, store_id=None):
+        parameters, scope = nearby.parameters('products', latitude, longitude, limit, cursor, store_id)
+        with self.transaction() as c:
+            items = rows(c, nearby.PRODUCTS_SQL, **parameters, store_id=store_id)
+        page = nearby.page(items, limit, scope)
+        for item in page['items']:
+            updated = item.pop('source_updated_at')
+            checked = item.pop('checked_at')
+            item.update(source='foodsave', sourceUpdatedAt=updated, checkedAt=checked,
+                        stale=updated is None or checked-updated>timedelta(minutes=30), sourceURL=None)
+        return page
 
     def account(self, user):
         with self.transaction() as c:
@@ -409,7 +433,7 @@ class Service:
 
     def stores(self,user):
         with self.transaction() as c:
-            return [dict(r) for r in rows(c,"SELECT s.id,s.owner_id AS vendor_id,s.name,s.latitude,s.longitude,s.service_mode,(SELECT COUNT(*) FROM dbo.products p WHERE p.store_id=s.id AND p.active=1 AND p.pickup_deadline>SYSUTCDATETIME() AND p.available_quantity>0) AS product_count FROM dbo.stores s JOIN dbo.users u ON u.id=s.owner_id WHERE u.role IN ('consumer','vendor') AND u.active=1 ORDER BY s.id OFFSET 0 ROWS FETCH NEXT 200 ROWS ONLY")]
+            return [dict(r) for r in rows(c,"SELECT s.id,s.owner_id AS vendor_id,s.name,s.latitude,s.longitude,s.service_mode,(SELECT COUNT(*) FROM dbo.products p WHERE p.store_id=s.id AND p.active=1 AND p.pickup_deadline>SYSUTCDATETIME() AND p.available_quantity>0) AS product_count FROM dbo.stores s JOIN dbo.users u ON u.id=s.owner_id WHERE s.location_confirmed=1 AND u.role IN ('consumer','vendor') AND u.active=1 ORDER BY s.id")]
 
     def review(self, user, key, reservation_id, rating, body):
         require(user, 'consumer', 'vendor')

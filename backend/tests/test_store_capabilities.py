@@ -51,7 +51,7 @@ class MemoryDB:
             u=d['users'].get(p.get('u',p.get('id')))
             if u and "role='vendor'" in sql and u['role']!='vendor':return None
             return u
-        if 'schema_migrations' in sql:return {'version':'013_store_capabilities.sql'} if d['schema'] else None
+        if 'schema_migrations' in sql:return {'version':'014_store_location.sql'} if d['schema'] else None
         if 'FROM dbo.request_results' in sql:
             key=(p['u'],p.get('op','pickup-preview'),p.get('k',p.get('key')))
             result=d['results'].get(key)
@@ -106,7 +106,7 @@ class MemoryDB:
         if 'INSERT INTO dbo.request_results' in sql:
             d['results'][p['u'],p['op'],p['k']]={'fingerprint':p['f'],'response':p['r']};return
         if 'INSERT INTO dbo.stores' in sql:
-            d['stores'][p['id']]={**p,'service_mode':'information'};return
+            d['stores'][p['id']]={**p,'service_mode':'information','location_confirmed':False,'location_revision':1};return
         if 'available_quantity=available_quantity-:q' in sql:
             product=d['products'][p['p']]
             if product['available_quantity']<p['q']:return SimpleNamespace(rowcount=0)
@@ -141,7 +141,7 @@ def owner(svc,identity='merchant'):
 
 
 def seed(db,store_owner='merchant',customer='customer'):
-    db.state['stores']['s']={'id':'s','owner_id':store_owner,'service_mode':'reservation',**STORE}
+    db.state['stores']['s']={'id':'s','owner_id':store_owner,'service_mode':'reservation','location_confirmed':True,'location_revision':1,**STORE}
     db.state['products']['p']=dict(id='p',store_id='s',name='Food',original_price_minor=100,sale_price_minor=50,photo_url='https://example.invalid/food',pickup_deadline=NOW+timedelta(hours=1),available_quantity=10)
     db.state['orders']['order']=dict(id='order',user_id=customer,product_id='p',state='waiting',quantity=1,snapshot=dump({'name':'Food','sale_price_minor':50}),pickup_code_hash=digest('ABCDEF123456'),expires_at=NOW+timedelta(minutes=5))
 

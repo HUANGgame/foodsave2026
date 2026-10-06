@@ -24,7 +24,7 @@ class AdminService(Service):
             identity = uid()
             execute(c, 'INSERT INTO dbo.stores(id,owner_id,name,latitude,longitude) VALUES(:id,:owner_id,:name,:latitude,:longitude)', id=identity, **data)
             audit(c, user['id'], 'store.create', identity)
-            return {'id': identity, **data, 'service_mode': 'information'}
+            return {'id': identity, **data, 'service_mode': 'information', 'location_revision': 1, 'location_confirmed': False}
         return self.mutate(user, 'store.create', key, data, action)
 
     def create_own_store(self, user, key, data):
@@ -35,7 +35,7 @@ class AdminService(Service):
             fail(422, '店家欄位不正確')
         payload = {**data, 'owner_id': user['id']}
         def action(c):
-            if not one(c, "SELECT version FROM dbo.schema_migrations WHERE version='013_store_capabilities.sql'"):
+            if not one(c, "SELECT version FROM dbo.schema_migrations WHERE version='014_store_location.sql'"):
                 fail(503, '同帳號商家服務尚未完成資料庫更新')
             # mutate already holds the owner's user row; admin creation takes
             # that same lock. The existing migration006 unique index is final
@@ -45,8 +45,43 @@ class AdminService(Service):
             identity = uid()
             execute(c, 'INSERT INTO dbo.stores(id,owner_id,name,latitude,longitude) VALUES(:id,:owner_id,:name,:latitude,:longitude)', id=identity, **payload)
             audit(c, user['id'], 'store.create', identity)
-            return {'id': identity, **payload, 'service_mode': 'information'}
+            return {'id': identity, **payload, 'service_mode': 'information', 'location_revision': 1, 'location_confirmed': False}
         return self.mutate(user, 'store.create', key, payload, action)
+
+    def store_location(self, user, store_id):
+        require_vendor(user)
+        with self.transaction() as c:
+            store = one(c, 'SELECT id,name,latitude,longitude,location_revision,location_confirmed FROM dbo.stores WHERE id=:id AND owner_id=:u', id=store_id, u=user['id'])
+            if not store:
+                fail(404, '找不到此商家店舖')
+            pending = one(c, "SELECT COUNT(*) AS n FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id WHERE p.store_id=:s AND r.state IN ('waiting','expired')", s=store_id)['n']
+            return {**dict(store), 'pending_orders': pending, 'can_move': pending == 0}
+
+    def save_store_location(self, user, key, store_id, data):
+        require_vendor(user)
+        # GPS/drag updates stay client-side drafts until this explicit action.
+        if data.get('confirm') != 'SAVE_LOCATION':
+            fail(422, '請確認保存店家位置')
+        def action(c):
+            # Same transaction-owned application lock as reserve, cancel,
+            # complete, expiry and stock-loss. Never settle orders implicitly.
+            lock_store_mode(c, store_id)
+            store = one(c, 'SELECT id,location_revision FROM dbo.stores WITH(UPDLOCK,HOLDLOCK) WHERE id=:id AND owner_id=:u', id=store_id, u=user['id'])
+            if not store:
+                fail(404, '找不到此商家店舖')
+            if store['location_revision'] != data['expected_revision']:
+                fail(409, '店家位置已更新，請重新載入再確認')
+            if one(c, "SELECT TOP (1) r.id FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id WHERE p.store_id=:s AND r.state IN ('waiting','expired')", s=store_id):
+                fail(409, '還有待領或過期未結算訂單，不能移動店家')
+            changed = execute(c, 'UPDATE dbo.stores SET latitude=:latitude,longitude=:longitude,location_confirmed=1,location_revision=location_revision+1 WHERE id=:id AND owner_id=:u AND location_revision=:expected_revision', id=store_id, u=user['id'], latitude=data['latitude'], longitude=data['longitude'], expected_revision=data['expected_revision'])
+            if changed.rowcount != 1:
+                fail(409, '店家位置已更新，請重新載入再確認')
+            audit(c, user['id'], 'store.location', store_id)
+            # Return persisted decimal coordinates, not unrounded GPS input.
+            saved = dict(one(c, 'SELECT id,latitude,longitude,location_revision,location_confirmed FROM dbo.stores WHERE id=:id AND owner_id=:u', id=store_id, u=user['id']))
+            saved.update(latitude=float(saved['latitude']), longitude=float(saved['longitude']))
+            return saved
+        return self.mutate(user, 'store-location', key, {'id': store_id, **data}, action)
 
     def set_store_mode(self, user, key, store_id, mode):
         require_vendor(user)
@@ -182,8 +217,8 @@ class AdminService(Service):
     def vendor_catalog(self, user):
         require_vendor(user)
         with self.transaction() as c:
-            stores = rows(c, "SELECT s.id,s.name,s.service_mode,(SELECT COUNT(*) FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id WHERE p.store_id=s.id AND r.state='waiting') AS pending_orders FROM dbo.stores s WHERE s.owner_id=:u", u=user['id'])
-            products = rows(c, 'SELECT p.* FROM dbo.products p JOIN dbo.stores s ON s.id=p.store_id WHERE s.owner_id=:u ORDER BY p.id OFFSET 0 ROWS FETCH NEXT 200 ROWS ONLY', u=user['id'])
+            stores = rows(c, "SELECT s.id,s.name,s.service_mode,s.latitude,s.longitude,s.location_revision,s.location_confirmed,(SELECT COUNT(*) FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id WHERE p.store_id=s.id AND r.state IN ('waiting','expired')) AS pending_orders FROM dbo.stores s WHERE s.owner_id=:u", u=user['id'])
+            products = rows(c, 'SELECT p.* FROM dbo.products p JOIN dbo.stores s ON s.id=p.store_id WHERE s.owner_id=:u ORDER BY p.id', u=user['id'])
             return {'stores': [dict(r) for r in stores], 'products': [dict(r) for r in products]}
 
     def view_database(self, user, table, page):
