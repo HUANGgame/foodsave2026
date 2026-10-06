@@ -20,7 +20,7 @@ class RankingService(Service):
             if one(c, 'SELECT week_key FROM dbo.weekly_settlements WHERE week_key=:w', w=week):
                 return {'week': week, 'already_settled': True}
             rules = rows(c, 'SELECT start_rank,end_rank,spins FROM dbo.ranking_rules WITH(HOLDLOCK) ORDER BY start_rank')
-            results = rows(c, "SELECT e.user_id,SUM(CAST(e.amount AS bigint)) AS exp FROM dbo.exp_events e JOIN dbo.users u ON u.id=e.user_id WHERE e.occurred_at>=:start AND e.occurred_at<:end AND u.active=1 AND u.role='consumer' GROUP BY e.user_id HAVING SUM(CAST(e.amount AS bigint))>0 ORDER BY SUM(CAST(e.amount AS bigint)) DESC,e.user_id OFFSET 0 ROWS FETCH NEXT 10000 ROWS ONLY", start=start, end=end)
+            results = rows(c, "SELECT e.user_id,SUM(CAST(e.amount AS bigint)) AS exp FROM dbo.exp_events e JOIN dbo.users u ON u.id=e.user_id WHERE e.occurred_at>=:start AND e.occurred_at<:end AND u.active=1 AND u.role IN ('consumer','vendor') GROUP BY e.user_id HAVING SUM(CAST(e.amount AS bigint))>0 ORDER BY SUM(CAST(e.amount AS bigint)) DESC,e.user_id OFFSET 0 ROWS FETCH NEXT 10000 ROWS ONLY", start=start, end=end)
             execute(c, 'INSERT INTO dbo.weekly_settlements(week_key,starts_at,ends_at) VALUES(:w,:s,:e)', w=week, s=start, e=end)
             for rank, row in enumerate(results, 1):
                 spins = next((r['spins'] for r in rules if r['start_rank'] <= rank <= r['end_rank']), 0)

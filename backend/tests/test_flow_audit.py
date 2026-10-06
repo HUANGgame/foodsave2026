@@ -16,10 +16,11 @@ class DB:
     def begin(self):yield None
 
 
-def test_vendor_deletion_disables_before_atomic_business_procedure(monkeypatch):
+@pytest.mark.parametrize('role', ['consumer', 'vendor'])
+def test_store_owner_deletion_disables_before_atomic_business_procedure(monkeypatch,role):
     password=secrets.token_urlsafe(24);calls=[]
     def one(c,sql,**args):
-        if 'FROM dbo.users' in sql:return {'password_hash':hash_password(password),'active':True}
+        if 'FROM dbo.users' in sql:return {'password_hash':hash_password(password),'active':True,'owns_store':True}
         if 'FROM dbo.deletion_requests' in sql:return None
         if 'close_vendor_business' in sql:
             assert any('UPDATE dbo.users SET active=0' in x for x,p in calls)
@@ -28,7 +29,7 @@ def test_vendor_deletion_disables_before_atomic_business_procedure(monkeypatch):
         raise AssertionError(sql)
     monkeypatch.setattr(operations,'one',one);monkeypatch.setattr(operations,'rows',lambda *a,**k:[])
     monkeypatch.setattr(operations,'execute',lambda c,sql,**params:calls.append((sql,params)))
-    result=Service(DB()).request_deletion({'id':'vendor','role':'vendor'},password)
+    result=Service(DB()).request_deletion({'id':'vendor','role':role},password)
     assert result['account_disabled'] and not result['erasure_completed']
     assert sum('close_vendor_business' in sql for sql,p in calls)==1
     assert not any('available_quantity+' in sql for sql,p in calls)

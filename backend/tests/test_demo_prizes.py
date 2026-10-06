@@ -36,7 +36,7 @@ def test_roles_cannot_edit_or_draw_as_wrong_role(client):
         api.app.dependency_overrides[api.current_user]=lambda role=role:{'role':role}
         assert client.get('/admin/demo-prizes').status_code==403
         assert client.put('/admin/demo-prizes',json=pool).status_code==403
-    assert client.post('/demo-draws',json={'revision':1}).status_code==403
+    assert client.post('/demo-draws',json={'revision':1}).status_code==200
 
 def test_disabled_default_and_no_write(client,monkeypatch,tmp_path):
     monkeypatch.delenv('FOODSAVE_DEMO_PRIZES_ENABLED')

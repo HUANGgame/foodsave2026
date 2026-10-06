@@ -301,8 +301,8 @@ def test_public_deletion_requires_confirmation_and_does_not_issue_session(client
     assert client.get('/account').status_code == 200
 
 
-@pytest.mark.parametrize('role', ['vendor','admin'])
-def test_only_consumer_can_draw(role):
+@pytest.mark.parametrize('role', ['admin'])
+def test_admin_cannot_draw(role):
     with pytest.raises(HTTPException) as error:
         AuthOnly().draw({**USER,'role':role}, 'intent-key')
     assert error.value.status_code == 403

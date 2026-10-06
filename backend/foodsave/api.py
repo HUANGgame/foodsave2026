@@ -16,7 +16,7 @@ from .db import one
 from . import schemas as S
 from . import demo_prizes
 from .ranking import RankingService
-from .service import require
+from .service import require, require_vendor
 from .accounts import AccountService
 from .account_mail import configured_mailer, MailUnavailable
 from .security import PasswordCapacityError
@@ -297,6 +297,11 @@ def reviews(identity: str, svc: Svc):
     return svc.store_reviews(identity)
 
 
+@app.post('/vendor/store', status_code=201)
+def own_store_create(body: S.OwnStore, user: User, svc: Svc, key: Key):
+    return svc.create_own_store(user, key, body.model_dump())
+
+
 @app.get('/vendor/catalog')
 def catalog(user: User, svc: Svc):
     return svc.vendor_catalog(user)
@@ -339,7 +344,7 @@ def account_script():
 
 @app.post('/reservations', status_code=201)
 def reserve(body: S.Reservation, user: User, svc: Svc, key: Key):
-    require(user, 'consumer')
+    require(user, 'consumer', 'vendor')
     svc.throttle('reserve', user['id'], limit=30, window_seconds=60)
     return svc.reserve(user, key, body.product_id, body.quantity)
 
@@ -362,7 +367,7 @@ def complete(identity: str, body: S.Pickup, user: User, svc: Svc, key: Key):
 
 @app.post('/vendor/pickups/preview')
 def pickup_preview(body: S.PickupPreview, user: User, svc: Svc, key: Key):
-    require(user, 'vendor')
+    require_vendor(user)
     # Camera scanning is not fulfillment. Bound requests per authenticated vendor.
     svc.throttle('pickup-preview', user['id'], limit=60, window_seconds=60)
     if not body.credential.startswith('FS1.'):
@@ -372,7 +377,7 @@ def pickup_preview(body: S.PickupPreview, user: User, svc: Svc, key: Key):
 
 @app.post('/vendor/pickups/confirm')
 def pickup_confirm(body: S.PickupConfirmation, user: User, svc: Svc, key: Key):
-    require(user, 'vendor')
+    require_vendor(user)
     return svc.confirm_pickup(user, key, body.review_key, body.review_token)
 
 
@@ -502,6 +507,6 @@ def demo_pool_edit(body: demo_prizes.DemoPoolUpdate, user: User):
 
 @app.post('/demo-draws')
 def demo_draw(body: demo_prizes.DemoDrawRequest, user: User):
-    require(user, 'consumer')
+    require(user, 'consumer', 'vendor')
     result = demo_prizes.draw(body.revision)
     return JSONResponse(status_code=409, content=result) if result.get('code')=='pool_changed' else result

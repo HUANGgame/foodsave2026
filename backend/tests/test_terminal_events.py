@@ -30,8 +30,8 @@ def test_deleted_order_terminal_is_scoped(monkeypatch,role,identity,allowed):
 
 @pytest.mark.parametrize('operation,status', [('reserve',410),('pickup-preview',410),('transition',None),('pickup-confirm',None)])
 def test_original_retry_cannot_recreate_deleted_order(monkeypatch,operation,status):
-    payload={'id':'order'}; result=dict(id='order',state='removed',terminal_reason='vendor_out_of_stock')
-    replies=iter([dict(id='c',role='consumer'),dict(fingerprint=svc.digest(svc.dump(payload)),response=json.dumps(result))])
+    payload={'id':'order','target':'cancelled'}; result=dict(id='order',state='removed',terminal_reason='vendor_out_of_stock')
+    replies=iter([dict(id='c',role='consumer'),dict(fingerprint=svc.digest(svc.dump(payload)),response=json.dumps(result)),dict(user_id='buyer' if operation=='pickup-confirm' else 'c',vendor_id='c' if operation=='pickup-confirm' else 'merchant',reason='vendor_out_of_stock')])
     monkeypatch.setattr(svc,'one',lambda *a,**k:next(replies))
     action=lambda:svc.Service(DB()).mutate(dict(id='c',role='consumer'),operation,'same-key',payload,lambda c:pytest.fail('must not mutate again'))
     if status:

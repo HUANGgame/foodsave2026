@@ -1,5 +1,5 @@
 from .db import engine, execute, one, rows
-from .service import Service, require, fail, uid, audit, lock_store_mode
+from .service import Service, require, require_vendor, fail, uid, audit, lock_store_mode
 
 
 class AdminService(Service):
@@ -19,14 +19,37 @@ class AdminService(Service):
         def action(c):
             if not one(c, "SELECT id FROM dbo.users WITH(UPDLOCK,HOLDLOCK) WHERE id=:id AND role='vendor' AND active=1", id=data['owner_id']):
                 fail(400, '請指定有效商家帳號')
+            if one(c, 'SELECT id FROM dbo.stores WITH(UPDLOCK,HOLDLOCK) WHERE owner_id=:u', u=data['owner_id']):
+                fail(409, '此帳號已有店家')
             identity = uid()
             execute(c, 'INSERT INTO dbo.stores(id,owner_id,name,latitude,longitude) VALUES(:id,:owner_id,:name,:latitude,:longitude)', id=identity, **data)
             audit(c, user['id'], 'store.create', identity)
             return {'id': identity, **data, 'service_mode': 'information'}
         return self.mutate(user, 'store.create', key, data, action)
 
+    def create_own_store(self, user, key, data):
+        require(user, 'consumer', 'vendor')
+        # Schema rejects owner/role inputs; still bind ownership here for every
+        # service caller. Never update users.role or revoke existing sessions.
+        if set(data) != {'name', 'latitude', 'longitude'}:
+            fail(422, '店家欄位不正確')
+        payload = {**data, 'owner_id': user['id']}
+        def action(c):
+            if not one(c, "SELECT version FROM dbo.schema_migrations WHERE version='013_store_capabilities.sql'"):
+                fail(503, '同帳號商家服務尚未完成資料庫更新')
+            # mutate already holds the owner's user row; admin creation takes
+            # that same lock. The existing migration006 unique index is final
+            # protection against concurrent creation through different paths.
+            if one(c, 'SELECT id FROM dbo.stores WITH(UPDLOCK,HOLDLOCK) WHERE owner_id=:u', u=user['id']):
+                fail(409, '此帳號已有店家')
+            identity = uid()
+            execute(c, 'INSERT INTO dbo.stores(id,owner_id,name,latitude,longitude) VALUES(:id,:owner_id,:name,:latitude,:longitude)', id=identity, **payload)
+            audit(c, user['id'], 'store.create', identity)
+            return {'id': identity, **payload, 'service_mode': 'information'}
+        return self.mutate(user, 'store.create', key, payload, action)
+
     def set_store_mode(self, user, key, store_id, mode):
-        require(user, 'vendor')
+        require_vendor(user)
         if mode not in ('information', 'reservation'):
             fail(422, '店家模式不正確')
         def action(c):
@@ -42,7 +65,7 @@ class AdminService(Service):
         return self.mutate(user, 'store-mode', key, {'id':store_id,'mode':mode}, action)
 
     def expire_store_orders(self,user,key,store_id):
-        require(user,'vendor')
+        require_vendor(user)
         def action(c):
             lock_store_mode(c,store_id)
             if not one(c,'SELECT id FROM dbo.stores WHERE id=:s AND owner_id=:u',s=store_id,u=user['id']):fail(404,'找不到此商家店舖')
@@ -54,7 +77,7 @@ class AdminService(Service):
         return self.mutate(user,'store-expire',key,{'store_id':store_id},action)
 
     def save_product(self, user, key, data, product_id=None):
-        require(user, 'vendor')
+        require_vendor(user)
         def action(c):
             store = one(c, 'SELECT id FROM dbo.stores WHERE id=:id AND owner_id=:u', id=data['store_id'], u=user['id'])
             if not store:
@@ -81,7 +104,7 @@ class AdminService(Service):
         return self.mutate(user, 'product.save', key, {'id': product_id, **data}, action)
 
     def adjust_stock(self,user,key,product_id,delta):
-        require(user,'vendor')
+        require_vendor(user)
         def action(c):
             lookup=one(c,'SELECT p.store_id FROM dbo.products p JOIN dbo.stores s ON s.id=p.store_id WHERE p.id=:p AND s.owner_id=:u',p=product_id,u=user['id'])
             if not lookup:fail(404,'找不到此商品')
@@ -93,14 +116,14 @@ class AdminService(Service):
         return self.mutate(user,'stock-adjust',key,{'id':product_id,'delta':delta},action)
 
     def stock_loss_preview(self,user,product_id):
-        require(user,'vendor')
+        require_vendor(user)
         with self.transaction() as c:
             row=one(c,"SELECT p.id,p.name,p.revision,p.available_quantity,(SELECT COUNT(*) FROM dbo.reservations r WHERE r.product_id=p.id AND r.state='waiting') AS pending_count FROM dbo.products p JOIN dbo.stores s ON s.id=p.store_id WHERE p.id=:p AND s.owner_id=:u",p=product_id,u=user['id'])
             if not row:fail(404,'找不到此商品')
             return dict(row)
 
     def report_stock_loss(self,user,key,product_id,data):
-        require(user,'vendor')
+        require_vendor(user)
         def action(c):
             result=one(c,'EXEC dbo.report_stock_loss @vendor_id=:u,@product_id=:p,@expected_revision=:revision,@expected_pending=:pending,@actual_available=:actual',u=user['id'],p=product_id,revision=data['expected_revision'],pending=data['expected_pending'],actual=data['actual_available'])
             if result['outcome']=='not_found':fail(404,'找不到此商品')
@@ -128,7 +151,7 @@ class AdminService(Service):
         if data['source_key'].strip().casefold().startswith('welcome:'):
             fail(422, '歡迎機會來源由首次登入管理，不能手動重發')
         def action(c):
-            if not one(c, "SELECT id FROM dbo.users WHERE id=:id AND active=1 AND role='consumer'", id=data['user_id']):
+            if not one(c, "SELECT id FROM dbo.users WHERE id=:id AND active=1 AND role IN ('consumer','vendor')", id=data['user_id']):
                 fail(404, '找不到用戶')
             now = one(c, 'SELECT SYSUTCDATETIME() AS now')['now']
             if data['expires_at'] <= now:
@@ -151,13 +174,13 @@ class AdminService(Service):
         return self.mutate(user, 'exp.configure', key, {'event': event, 'amount': amount, 'enabled': enabled}, action)
 
     def vendor_orders(self, user):
-        require(user, 'vendor')
+        require_vendor(user)
         self.expire_reservations(limit=25,vendor_id=user['id'])
         with self.transaction() as c:
             return [dict(r) for r in rows(c, 'SELECT r.id,r.product_id,r.state,r.quantity,r.snapshot,r.expires_at FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id JOIN dbo.stores s ON s.id=p.store_id WHERE s.owner_id=:u ORDER BY r.created_at DESC OFFSET 0 ROWS FETCH NEXT 100 ROWS ONLY', u=user['id'])]
 
     def vendor_catalog(self, user):
-        require(user, 'vendor')
+        require_vendor(user)
         with self.transaction() as c:
             stores = rows(c, "SELECT s.id,s.name,s.service_mode,(SELECT COUNT(*) FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id WHERE p.store_id=s.id AND r.state='waiting') AS pending_orders FROM dbo.stores s WHERE s.owner_id=:u", u=user['id'])
             products = rows(c, 'SELECT p.* FROM dbo.products p JOIN dbo.stores s ON s.id=p.store_id WHERE s.owner_id=:u ORDER BY p.id OFFSET 0 ROWS FETCH NEXT 200 ROWS ONLY', u=user['id'])

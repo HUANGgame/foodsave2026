@@ -19,7 +19,7 @@ def direct(cls):
 
 
 def test_information_mode_rejects_tampered_reserve_before_stock_write(monkeypatch):
-    result=iter([None,{'store_id':'s'},{'id':'p','store_id':'s'},{'service_mode':'information'}])
+    result=iter([None,{'store_id':'s'},{'id':'p','store_id':'s'},{'owner_id':'vendor','service_mode':'information'}])
     monkeypatch.setattr(service,'lock_store_mode',lambda c,s:None)
     monkeypatch.setattr(service,'one',lambda *a,**k:next(result))
     monkeypatch.setattr(service,'execute',lambda *a,**k:pytest.fail('information must not change stock'))
@@ -31,7 +31,7 @@ def test_reservation_mode_still_creates_one_opaque_pickup(monkeypatch):
     from datetime import timedelta
     now=datetime(2026,10,3)
     product=dict(id='p',store_id='s',name='QA',original_price_minor=100,sale_price_minor=50,photo_url='https://images.example.invalid/qa',pickup_deadline=now+timedelta(hours=1))
-    result=iter([None,{'store_id':'s'},product,{'service_mode':'reservation','latitude':0,'longitude':0},{'now':now}]);writes=[]
+    result=iter([None,{'store_id':'s'},product,{'owner_id':'vendor','service_mode':'reservation','latitude':0,'longitude':0},{'now':now}]);writes=[]
     monkeypatch.setattr(service,'lock_store_mode',lambda c,s:None)
     monkeypatch.setattr(service,'rows',lambda *a,**k:[])
     monkeypatch.setattr(service,'one',lambda *a,**k:next(result))

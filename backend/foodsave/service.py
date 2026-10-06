@@ -27,6 +27,13 @@ def require(user, *roles):
         fail(403, '此帳號無操作權限')
 
 
+def require_vendor(user):
+    # is_vendor is derived from store ownership during authentication, never a
+    # client-supplied role. Legacy vendor accounts retain their existing access.
+    if user['role'] != 'vendor' and not (user['role'] == 'consumer' and user.get('is_vendor')):
+        fail(403, '此帳號無操作權限')
+
+
 def lock_store_mode(c, store_id):
     # Same transaction-owned guard for reservation creation and mode changes.
     execute(c, "DECLARE @r int; EXEC @r=sp_getapplock @Resource=:resource, @LockMode='Exclusive', @LockOwner='Transaction', @LockTimeout=10000; IF @r<0 THROW 51000,'Store operation busy',1;", resource='foodsave:store-mode:'+store_id)
@@ -99,7 +106,7 @@ class Service:
 
     def authenticate(self, token):
         with self.transaction() as c:
-            user = one(c, 'SELECT u.id,u.email,u.role FROM dbo.sessions s JOIN dbo.users u ON u.id=s.user_id WHERE s.token_hash=:h AND s.expires_at>SYSUTCDATETIME() AND u.active=1', h=digest(token))
+            user = one(c, 'SELECT u.id,u.email,u.role,CASE WHEN EXISTS(SELECT 1 FROM dbo.stores owned WHERE owned.owner_id=u.id) THEN 1 ELSE 0 END AS is_vendor FROM dbo.sessions s JOIN dbo.users u ON u.id=s.user_id WHERE s.token_hash=:h AND s.expires_at>SYSUTCDATETIME() AND u.active=1', h=digest(token))
             if not user:
                 fail(401, '請重新登入')
             return dict(user)
@@ -124,14 +131,31 @@ class Service:
                 cached=json.loads(old['response'])
                 if cached.get('terminal_reason') and operation in ('reserve','pickup-preview'):
                     fail(410, '此預約已移除，請查看通知與最新庫存')
+                self._authorize_cached_order(c, user, operation, payload, cached)
                 return cached
             result = action(c)
             execute(c, 'INSERT INTO dbo.request_results(user_id,operation,request_key,fingerprint,response) VALUES(:u,:op,:k,:f,:r)',
                     u=user['id'], op=operation, k=key, f=fingerprint, r=dump(result))
             return json.loads(dump(result))
 
+    def _authorize_cached_order(self, c, user, operation, payload, cached):
+        # A previous success is not an authorization grant. Recheck even for
+        # legacy cached replies before returning pickup credentials or receipts.
+        if operation not in ('reserve', 'transition', 'pickup-preview', 'pickup-confirm', 'review'):
+            return
+        merchant = operation in ('pickup-preview', 'pickup-confirm') or (operation == 'transition' and payload['target'] == 'completed')
+        if cached.get('terminal_reason'):
+            self.terminal_result(c, user, cached['id'], merchant=merchant)
+            return
+        identity = cached.get('reservation_id') if operation == 'review' else cached.get('id')
+        order = one(c, 'SELECT r.user_id,s.owner_id FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id JOIN dbo.stores s ON s.id=p.store_id WHERE r.id=:id', id=identity)
+        if not order or order['owner_id' if merchant else 'user_id'] != user['id']:
+            fail(404, '找不到預約')
+        if (merchant or operation in ('reserve', 'review')) and order['user_id'] == order['owner_id']:
+            fail(403, '不能預約或核銷自己的商品')
+
     def reserve(self, user, key, product_id, quantity):
-        require(user, 'consumer')
+        require(user, 'consumer', 'vendor')
         def action(c):
             if one(c, "SELECT TOP (1) id FROM dbo.reservations WHERE user_id=:u AND product_id=:p AND state='waiting' AND expires_at>SYSUTCDATETIME()", u=user['id'], p=product_id):
                 fail(409, '你已保留此商品，請到我的預約查看')
@@ -142,7 +166,9 @@ class Service:
             p = one(c, 'SELECT * FROM dbo.products WITH(UPDLOCK,HOLDLOCK) WHERE id=:p AND active=1 AND pickup_deadline>SYSUTCDATETIME()', p=product_id)
             if not p:
                 fail(404, '商品不存在或已截止')
-            store = one(c, 'SELECT service_mode,latitude,longitude FROM dbo.stores WITH(UPDLOCK,HOLDLOCK) WHERE id=:id', id=p['store_id'])
+            store = one(c, 'SELECT owner_id,service_mode,latitude,longitude FROM dbo.stores WITH(UPDLOCK,HOLDLOCK) WHERE id=:id', id=p['store_id'])
+            if store and store['owner_id'] == user['id']:
+                fail(403, '不能預約自己的商品')
             if not store or store['service_mode'] != 'reservation':
                 fail(409, '此店僅提供庫存資訊，不能在App保留商品；請以現場為準')
             for old in rows(c, "SELECT TOP (25) id FROM dbo.reservations WHERE product_id=:p AND state IN ('waiting','expired') AND expires_at<=SYSUTCDATETIME() ORDER BY expires_at,id",p=product_id):
@@ -163,31 +189,43 @@ class Service:
         return self.mutate(user, 'reserve', key, {'product_id': product_id, 'quantity': quantity}, action)
 
     def transition(self, user, key, reservation_id, target, code=''):
-        require(user, 'consumer' if target == 'cancelled' else 'vendor')
+        if target not in ('cancelled', 'completed'):
+            fail(422, '預約狀態不正確')
+        if target == 'cancelled':
+            require(user, 'consumer', 'vendor')
+        else:
+            require_vendor(user)
         def action(c):
             return self._transition(c, user, reservation_id, target, code)
         return self.mutate(user, 'transition', key, {'id': reservation_id, 'target': target, 'code_hash': digest(code)}, action)
 
-    def terminal_result(self, c, user, reservation_id):
+    def terminal_result(self, c, user, reservation_id, merchant=None):
         terminal=one(c, 'SELECT reservation_id,user_id,vendor_id,reason FROM dbo.reservation_terminals WHERE reservation_id=:id',id=reservation_id)
-        if not terminal or (user['role']=='consumer' and terminal['user_id']!=user['id']) or (user['role']=='vendor' and terminal['vendor_id']!=user['id']):
+        allowed = terminal and user['role'] in ('consumer', 'vendor') and (
+            user['id'] in (terminal['user_id'], terminal['vendor_id']) if merchant is None
+            else terminal['vendor_id' if merchant else 'user_id'] == user['id'])
+        if not allowed:
             fail(404, '找不到預約')
+        if merchant and terminal['user_id'] == terminal['vendor_id']:
+            fail(403, '不能核銷自己的商品')
         return {'id':reservation_id,'state':'expired' if terminal['reason']=='expired' else 'removed','terminal_reason':terminal['reason']}
 
     def _transition(self, c, user, reservation_id, target, code='', reviewed=False):
         lookup=one(c,'SELECT r.product_id,p.store_id FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id WHERE r.id=:id',id=reservation_id)
         if not lookup:
-            return self.terminal_result(c,user,reservation_id)
+            return self.terminal_result(c,user,reservation_id,merchant=target=='completed')
         lock_store_mode(c,lookup['store_id'])
         product=one(c,'SELECT p.id,s.owner_id FROM dbo.products p WITH(UPDLOCK,HOLDLOCK) JOIN dbo.stores s ON s.id=p.store_id WHERE p.id=:p',p=lookup['product_id'])
         r=one(c,'SELECT *,SYSUTCDATETIME() AS now FROM dbo.reservations WITH(UPDLOCK,HOLDLOCK) WHERE id=:id',id=reservation_id)
         if not r:
-            return self.terminal_result(c,user,reservation_id)
+            return self.terminal_result(c,user,reservation_id,merchant=target=='completed')
         if (target=='cancelled' and r['user_id']!=user['id']) or (target=='completed' and product['owner_id']!=user['id']):
             fail(404,'找不到預約')
+        if target=='completed' and r['user_id']==product['owner_id']:
+            fail(403,'不能核銷自己的商品')
         if r['state'] in ('waiting','expired') and r['expires_at']<=r['now']:
             one(c,'EXEC dbo.expire_reservation @reservation_id=:id',id=reservation_id)
-            return self.terminal_result(c,user,reservation_id)
+            return self.terminal_result(c,user,reservation_id,merchant=target=='completed')
         if target=='completed' and not reviewed and not hmac.compare_digest(r['pickup_code_hash'],digest(code)):
             fail(400,'取貨碼不正確')
         if r['state']!='waiting':fail(409,'預約已處理')
@@ -199,7 +237,7 @@ class Service:
 
     def preview_pickup(self, user, key, credential):
         """Read-only order verification; persist only a short-lived confirmation receipt."""
-        require(user, 'vendor')
+        require_vendor(user)
         def action(c):
             if credential.startswith('FS1.'):
                 matches = rows(c, "SELECT r.*,SYSUTCDATETIME() AS now FROM dbo.request_results q JOIN dbo.reservations r ON JSON_VALUE(q.response,'$.id')=r.id AND q.user_id=r.user_id JOIN dbo.products p ON p.id=r.product_id JOIN dbo.stores s ON s.id=p.store_id WHERE q.operation='reserve' AND JSON_VALUE(q.response,'$.pickup_qr')=:credential AND s.owner_id=:vendor", credential=credential, vendor=user['id'])
@@ -208,6 +246,8 @@ class Service:
             if len(matches) != 1:
                 fail(404, '找不到可領取的預約，請重新掃碼或確認取貨碼')
             order = matches[0]
+            if order['user_id'] == user['id']:
+                fail(403, '不能核銷自己的商品')
             if order['state'] != 'waiting' or order['expires_at'] <= order['now']:
                 fail(409, '此預約已處理或逾時，請重新載入今日訂單')
             snapshot = json.loads(order['snapshot'])
@@ -218,14 +258,14 @@ class Service:
         return self.mutate(user, 'pickup-preview', key, {'credential_hash': digest(credential)}, action)
 
     def confirm_pickup(self, user, key, review_key, review_token):
-        require(user, 'vendor')
+        require_vendor(user)
         def action(c):
             result = one(c, "SELECT response,SYSUTCDATETIME() AS now FROM dbo.request_results WHERE user_id=:u AND operation='pickup-preview' AND request_key=:key", u=user['id'], key=review_key)
             if not result:
                 fail(404, '請先掃碼核對商品')
             receipt = json.loads(result['response'])
             if receipt.get('terminal_reason'):
-                return self.terminal_result(c,user,receipt['id'])
+                return self.terminal_result(c,user,receipt['id'],merchant=True)
             if not hmac.compare_digest(receipt['review_token'], review_token):
                 fail(404, '請先掃碼核對商品')
             if datetime.fromisoformat(receipt['review_expires_at']) <= result['now']:
@@ -236,7 +276,7 @@ class Service:
         return self.mutate(user, 'pickup-confirm', key, {'review_key': review_key, 'token_hash': digest(review_token)}, action)
 
     def draw(self, user, key):
-        require(user, 'consumer')
+        require(user, 'consumer', 'vendor')
         def action(c):
             grant = one(c, 'SELECT TOP (1) id FROM dbo.spin_grants WITH(UPDLOCK,HOLDLOCK) WHERE user_id=:u AND remaining>0 AND expires_at>SYSUTCDATETIME() ORDER BY expires_at,id', u=user['id'])
             if not grant:
@@ -300,11 +340,12 @@ class Service:
 
     def request_deletion(self, user, password):
         with self.transaction() as c:
-            current=one(c,'SELECT password_hash,active FROM dbo.users WITH(UPDLOCK,HOLDLOCK) WHERE id=:u',u=user['id'])
+            current=one(c,'SELECT password_hash,active,CASE WHEN EXISTS(SELECT 1 FROM dbo.stores WHERE owner_id=:u) THEN 1 ELSE 0 END AS owns_store FROM dbo.users WITH(UPDLOCK,HOLDLOCK) WHERE id=:u',u=user['id'])
             if not current or not verify_password(password,current['password_hash']):fail(401,'請確認密碼')
+            owns_store = user['role']=='vendor' or bool(current.get('owns_store'))
             existing=one(c,'SELECT id,state FROM dbo.deletion_requests WHERE user_id=:u',u=user['id'])
             if existing:
-                if user['role']=='vendor' and existing['state']=='requested':
+                if owns_store and existing['state']=='requested':
                     result=one(c,'EXEC dbo.close_vendor_business @vendor_id=:u',u=user['id'])
                     if result['outcome']!='closed':fail(409,'店家刪除尚未完成，請重試')
                 return {'id':existing['id'],'state':existing['state'],'account_disabled':not bool(current['active']),'erasure_completed':existing['state']=='completed'}
@@ -321,7 +362,7 @@ class Service:
             execute(c,'EXEC dbo.submit_deletion_request @request_id=:id,@user_id=:u',id=identity,u=user['id'])
             execute(c,'UPDATE dbo.users SET active=0 WHERE id=:u',u=user['id'])
             execute(c,'DELETE FROM dbo.sessions WHERE user_id=:u',u=user['id'])
-            if user['role']=='vendor':
+            if owns_store:
                 result=one(c,'EXEC dbo.close_vendor_business @vendor_id=:u',u=user['id'])
                 if result['outcome']!='closed':fail(409,'店家刪除尚未完成，請重試')
             audit(c,user['id'],'account.deletion_requested',identity)
@@ -342,9 +383,11 @@ class Service:
         return self.request_deletion(identity, password)
 
     def favorite(self, user, key, vendor_id, enabled):
-        require(user,'consumer')
+        require(user,'consumer','vendor')
+        if vendor_id == user['id']:
+            fail(403, '不能收藏自己的店家取得獎勵')
         def action(c):
-            if not one(c,"SELECT u.id FROM dbo.users u WITH(UPDLOCK,HOLDLOCK) JOIN dbo.stores s ON s.owner_id=u.id WHERE u.id=:id AND u.role='vendor' AND u.active=1",id=vendor_id):
+            if not one(c,"SELECT u.id FROM dbo.users u WITH(UPDLOCK,HOLDLOCK) JOIN dbo.stores s ON s.owner_id=u.id WHERE u.id=:id AND u.role IN ('consumer','vendor') AND u.active=1",id=vendor_id):
                 fail(404,'找不到店家')
             exists=one(c,'SELECT vendor_id FROM dbo.favorites WHERE user_id=:u AND vendor_id=:v',u=user['id'],v=vendor_id)
             if enabled and not exists:
@@ -366,14 +409,16 @@ class Service:
 
     def stores(self,user):
         with self.transaction() as c:
-            return [dict(r) for r in rows(c,"SELECT s.id,s.owner_id AS vendor_id,s.name,s.latitude,s.longitude,s.service_mode,(SELECT COUNT(*) FROM dbo.products p WHERE p.store_id=s.id AND p.active=1 AND p.pickup_deadline>SYSUTCDATETIME() AND p.available_quantity>0) AS product_count FROM dbo.stores s JOIN dbo.users u ON u.id=s.owner_id WHERE u.role='vendor' AND u.active=1 ORDER BY s.id OFFSET 0 ROWS FETCH NEXT 200 ROWS ONLY")]
+            return [dict(r) for r in rows(c,"SELECT s.id,s.owner_id AS vendor_id,s.name,s.latitude,s.longitude,s.service_mode,(SELECT COUNT(*) FROM dbo.products p WHERE p.store_id=s.id AND p.active=1 AND p.pickup_deadline>SYSUTCDATETIME() AND p.available_quantity>0) AS product_count FROM dbo.stores s JOIN dbo.users u ON u.id=s.owner_id WHERE u.role IN ('consumer','vendor') AND u.active=1 ORDER BY s.id OFFSET 0 ROWS FETCH NEXT 200 ROWS ONLY")]
 
     def review(self, user, key, reservation_id, rating, body):
-        require(user, 'consumer')
+        require(user, 'consumer', 'vendor')
         def action(c):
-            r = one(c, "SELECT id FROM dbo.reservations WHERE id=:id AND user_id=:u AND state='completed'", id=reservation_id, u=user['id'])
+            r = one(c, "SELECT r.id,s.owner_id FROM dbo.reservations r JOIN dbo.products p ON p.id=r.product_id JOIN dbo.stores s ON s.id=p.store_id WHERE r.id=:id AND r.user_id=:u AND r.state='completed'", id=reservation_id, u=user['id'])
             if not r:
                 fail(404, '只有本人已完成預約可評論')
+            if r['owner_id'] == user['id']:
+                fail(403, '不能評論自己的商品取得獎勵')
             if one(c, 'SELECT reservation_id FROM dbo.reviews WHERE reservation_id=:id', id=reservation_id):
                 fail(409, '此預約已評論')
             execute(c, 'INSERT INTO dbo.reviews(reservation_id,user_id,rating,body) VALUES(:id,:u,:rating,:body)', id=reservation_id, u=user['id'], rating=rating, body=body)

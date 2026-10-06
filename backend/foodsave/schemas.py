@@ -120,11 +120,14 @@ class Review(Strict):
     body: str = Field(min_length=1, max_length=1000)
 
 
-class Store(Strict):
-    owner_id: str = Field(pattern=r'^[a-f0-9-]{36}$')
+class OwnStore(Strict):
     name: str = Field(min_length=1, max_length=100)
     latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
     longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
+
+
+class Store(OwnStore):
+    owner_id: str = Field(pattern=r'^[a-f0-9-]{36}$')
 
 
 class Deadline(Strict):
