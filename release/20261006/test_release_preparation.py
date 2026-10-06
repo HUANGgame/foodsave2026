@@ -39,3 +39,27 @@ def test_braced_password_is_not_parsed_as_security_settings():
 ])
 def test_invalid_or_ambiguous_connection_refused_without_network(value):
     with pytest.raises(v.CheckFailed):v.validate_connection(value)
+
+
+def test_candidate_manifest_matches_exact_git_source_and_preserves_history():
+    import hashlib
+    current=json.loads(v.MANIFEST.read_text())
+    historical=HERE/'history/source-hashes-1a5a6d6.json'
+    original=subprocess.check_output(['git','show','6fc637d18e9430ebf98c2ead27dc8aaab755429c:release/20261006/source-hashes.json'],cwd=v.ROOT)
+    assert historical.read_bytes()==original
+    old=json.loads(original)
+    assert current['commit']==v.SOURCE=='3b6435beb834c161a17a879430119f5c53ea45a0'
+    assert set(current['files'])==set(old['files'])
+    assert [p for p in current['files'] if current['files'][p]!=old['files'][p]]==['backend/foodsave/account_mail.py']
+    for name,digest in current['files'].items():
+        assert hashlib.sha256(subprocess.check_output(['git','show',v.SOURCE+':'+name],cwd=v.ROOT)).hexdigest()==digest
+
+@pytest.mark.parametrize('name',['backend/foodsave/account_mail.py','backend/foodsave/static/demo-prizes.json'])
+def test_new_candidate_mail_and_fallback_hashes_cannot_be_bypassed(tmp_path,monkeypatch,name):
+    data=json.loads(v.MANIFEST.read_text());data['files'][name]='0'*64
+    wrong=tmp_path/'manifest.json';wrong.write_text(json.dumps(data));monkeypatch.setattr(v,'MANIFEST',wrong)
+    with pytest.raises(v.CheckFailed,match='source_hash:'+name):v.sql_files()
+
+def test_historical_manifest_is_rejected_even_if_supplied(monkeypatch):
+    monkeypatch.setattr(v,'MANIFEST',HERE/'history/source-hashes-1a5a6d6.json')
+    with pytest.raises(v.CheckFailed,match='source_commit'):v.sql_files()

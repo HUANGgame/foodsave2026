@@ -1,8 +1,8 @@
 {
-  "commit": "3b6435beb834c161a17a879430119f5c53ea45a0",
+  "commit": "1a5a6d6ab9a5c098c46d54601a677eec18323143",
   "files": {
     "backend/foodsave/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "backend/foodsave/account_mail.py": "0a3cf6d9adfe03f1b1de0e204494897f52fd3aed343ac503a8846b5ce9269ef2",
+    "backend/foodsave/account_mail.py": "41f694dd9b27142cef70667918703a0ab080a552979337699d0bb54334a09144",
     "backend/foodsave/accounts.py": "1864ab0e832f790060d554115ab917f2b53e5656829f7cc0cb13169563774b87",
     "backend/foodsave/admin.py": "5961cd19e4f3234fd25c4700c1c981e187c8688f31057043bb1ec34cd48b50ab",
     "backend/foodsave/api.py": "268a64d644665ad5451f4b06725c1f8f1e418c9d567aad03cc69123037013ca2",

@@ -1,6 +1,10 @@
-# Release preparation — fixed application commit 1a5a6d6
+# Validation preparation — application candidate 3b6435b
 
-**Not deployed; no SQL, grants, Azure resource changes, or chargeable operations executed.** These tools prepare/audit the existing application commit `1a5a6d6ab9a5c098c46d54601a677eec18323143`. No batch-4 search/map work is included. The original rebuild branch is retained; preparation is on `foodsave-release-prep-20261006`.
+**No SQL, grants, deployment or chargeable operations executed.** This validation runner and `source-hashes.json` now pin the exact application candidate `3b6435beb834c161a17a879430119f5c53ea45a0`. Its API ZIP SHA256 is `7c99dc6c200332402e7bbc9fbe2caa90249fdb12bdb7d2481d9431cdf60b90f9`.
+
+Use this preparation commit's complete checkout (backend plus release tooling), not the old 6fc637d validation ZIP. The application pin intentionally remains 3b6435b even though the preparation-only commit has a newer SHA. Each pinned source byte must match before a connection is considered. The backend runtime/migration path set is unchanged; only account_mail.py's digest differs from the old manifest. Requirements and migrations are unchanged.
+
+Historical source-hashes and README are preserved byte-for-byte under `history/`; the old runner is preserved in Git commit `6fc637d18e9430ebf98c2ead27dc8aaab755429c`. Historical manifests are not selectable overrides. No hash checks or SQL protections were removed. The runner change is only its SOURCE constant.
 
 ## Validation database, not production
 
@@ -33,39 +37,12 @@ The actual runtime SQL principal/SID is **not known in this workspace**. The App
 
 `runtime-location-grant.review.sql` is **not authorized for execution by this preparation task**. It stops with Approved=0, placeholder principal and null SID. Any future authorization must cover the exact existing identity and four columns. No owner_id UPDATE, table-wide UPDATE, CREATE USER, role, CONTROL, ALTER, IMPERSONATE or GRANT OPTION is proposed. No attempt was made to modify actual permissions. Do not run the initial broad runtime-grants template against an existing principal.
 
-## Build and artifacts
+## Candidate and remaining blockers
 
-`build_candidates.py --output <new-private-directory>` extracts application files using `git archive` of the exact commit, uses installed pinned npm dependencies, and builds in isolation. It sets:
+Use `build_backend_candidate.py --source 3b6435beb834c161a17a879430119f5c53ea45a0 --output <new-private-directory>` for the current backend candidate. The historical `build_candidates.py` still pins 1a5a6d6 and must not build the current release. The current backend includes the verified 805-byte public fictional demo fallback and approved continuous-mail semantics; no production persistent store is created. The coordinator privately backed up the production runtime archive; it is not a SQL/config backup and was not imported into this executor.
 
-- `NEXT_PUBLIC_APP_MODE=live`
-- `NEXT_PUBLIC_API_BASE_URL=https://foodsave-web-tku-aqhxdnhpe8fdhfee.eastasia-01.azurewebsites.net`
-- Existing tracked public privacy/operator/contact settings, including `NEXT_PUBLIC_PRIVACY_POLICY_COMPLETE=false` (unchanged).
+The separately built frontend candidate remains pinned to ae4c6bb070a9bfd20dc09f3321cf4330e0c7d7e0. It passed the demo-catalog scan; no frontend rebuild or data insertion is part of this preparation update. Its release gate still requires verified application ID and approved frontend privacy completion. Policy amendment remains pending; no completion flag is changed. Verify the actual existing APK identity/signature, never infer it from the repository's tw.foodsave.demo default.
 
-The current `npm run build:release` gate fails for unconfirmed application ID and incomplete privacy flag. Preparation does **not** fake those values: ordinary `npm run build` produces a **candidate**, not a gate-approved release. No Android package ID/signature is invented. The tracked privacy text also predates server-side nearby-coordinate querying; do not mark it complete without reviewing that accuracy.
+Preparation tests verify the new pin against Git bytes, no-connect plan, exact migration guard handling, hash rejection and connection-string validation. Passing these does not mean SQL integration passed. The existing empty validation database remains the only allowed SQL target, and this task does not execute SQL.
 
-The frontend static export built successfully against the formal API and contains no `api.foodsave.test`. However, unchanged AppEntry statically imports FoodApp, so Next still bundles the old demo store/product sample data (`lib/demo.ts`). Thus the fixed-commit frontend cannot satisfy “no test data”: its ZIP is **quarantined, not a compliant deliverable**, and must not be uploaded to production. Removing that data needs a small reviewed packaging/source change and fresh full tests, not hand-deleting a referenced JS chunk. No such application change was made here.
-
-The backend ZIP is a root `foodsave/` package plus `requirements.txt`, without tests/QA, migrations, owner/erasure/diagnosis/CLI tools, secrets, environments, dependencies or credentials. The default demo-prizes seed file is omitted to satisfy the no-test-data requirement. If the current formal service has the optional demo feature enabled, its **actual separately stored configuration must first be backed up and verified**; otherwise omitting its fallback can break that feature. Do not silently disable it or substitute new sample values. This remains a deployment check/blocker.
-
-Backend candidate import and `/health/live` pass locally without DB. It is not a self-contained App Service binary: verify existing Python/ODBC runtime, startup command, persistent configuration and the existing deployment/build behavior before uploading. Suggested command from the pinned source is `python -m uvicorn foodsave.api:app --host 0.0.0.0 --port 8000 --no-proxy-headers`; do not replace the actual configured command without comparing it. A ZIP upload may replace/remove existing wwwroot files; do not upload until the backup is verified.
-
-## Existing production backups and handoff
-
-The parent conversation reports Azure Portal's existing login, SWA SwaCli/productionReady and App Service F1 Running/manual ZIP UI. This does not give this executor Azure connectivity or prove the UI can access these local files. Git push/pull is the only already-verified source transfer here. Library delivery, if successful, supplies downloadable files, not proof of Azure upload/deployment.
-
-Before any overwrite, in that authorized environment:
-
-1. Download the current App Service deployed wwwroot through its **existing authorized** Kudu/SCM file/download facility or known previous deployment artifact, if available. Include actual persistent demo configuration separately. Verify archive contents and SHA256 locally; if that facility is unavailable, stop rather than assume a backup exists.
-2. Privately export/record current app settings, connection strings, startup/runtime/ODBC, identity and deployment/build flags. These may contain secrets: keep owner-only encrypted/private storage; **never** put the settings export in this repository, Library deliverables or public Git. Verify it can be read back privately.
-3. Recover the currently deployed SWA static artifact from the existing trusted SwaCli/CI artifact source, or a supported export if available, with all assets and manifest/hash. SWA “productionReady” and the visible homepage are not a verified whole-site backup. In this environment that artifact is still unavailable.
-4. Separately establish a database recovery plan and scope. Git/runtime ZIP backups contain **no SQL data**. Existing PITR may cost money to restore; no free restore is assumed. The blank free validation DB is a test target, not a production backup. No BACPAC export, restore/new database or paid resource has been started.
-5. After SQL/runtime authorization and real validation, deploy compatible backend first, verify `/health/ready` and real login/nearby/create/location behavior, then a gate-approved frontend. Do not copy this frontend over 0.4.10: feature equivalence and sample-data removal remain unresolved. Old-backend rollback can expose new location drafts; Git rollback alone is unsafe.
-
-## Evidence and stop point
-
-- Application commit full browser suite: **52/52** in `/workspace/foodsave-rebuild/batch3-browser-full-commit.log`; still mock/synthetic API evidence.
-- Preparation source hashes, no-connect plan and batch/guard tests pass locally. No new Azure call, SQL execution, permission change, paid resource, production ZIP upload or deployment occurred.
-- Before preparation: bundle `release-prep-before.bundle`, SHA256 `2971062248251b35d803c7af1099565eb85232713a9671700ac7d03aaec17ef8`; independent restore/fsck and 269 tracked-file hashes matched.
-- Paused batch-4 files remain archived outside the repository and are not packaged.
-
-The requested endpoint remains: only finish the necessary approved release work, verify the deployed result, then stop. Do not restart feature reconstruction.
+Before editing, source backup `validation-repin-20261006-before.bundle` was verified/restored/fsck checked with 287 matching files; SHA256 `5e255963e5e4b3b4a29b4126370a17d86ceebdbe6c2a0c8987271aae2958cb72`. Changed existing files also have separately verified overwrite copies. Independent review precedes commit. Production SQL/config recovery, runtime identity/permissions and an authorized deployment route remain separate prerequisites.
