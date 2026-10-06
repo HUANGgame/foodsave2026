@@ -8,7 +8,7 @@
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
     "android:sync": "npm run build && cap sync android",
-    "build:release": "node scripts/check-release-config.cjs && next build",
+    "build:release": "node scripts/check-release-config.cjs && next build && node scripts/check-live-bundle.cjs",
     "test:live": "playwright test -c playwright.live.config.ts"
   },
   "dependencies": {
