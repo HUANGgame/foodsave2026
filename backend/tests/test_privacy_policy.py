@@ -41,3 +41,28 @@ def test_approved_owner_policy_has_finite_retention_and_no_execution():
     assert owner['enabled'] is False
     app_source = (ROOT/'app/privacy/page.tsx').read_text()
     assert 'backend/foodsave/static/privacy-policy.json' in app_source
+
+
+def test_location_amendment_preserves_other_approved_policy_content():
+    import subprocess
+    previous=json.loads(subprocess.check_output(['git','show','9b924eb2397d9c88625f0f4d149b46f5be9429f8:backend/foodsave/static/privacy-policy.json'],cwd=ROOT))
+    assert POLICY['version']=='foodsave-test-20261007-v2'
+    assert POLICY['summary']==previous['summary'] and POLICY['links']==previous['links']
+    for old,new in zip(previous['sections'],POLICY['sections'],strict=True):
+        assert old['title']==new['title']
+        if old['title']=='定位、相機與外部服務':
+            assert new['paragraphs'][1:]==old['paragraphs'][1:]
+            assert new['paragraphs'][0].split('商家點選掃碼取貨')[1]==old['paragraphs'][0].split('商家點選掃碼取貨')[1]
+            assert '座標送至 FoodSave 後端' in new['paragraphs'][0]
+            assert '店址草稿座標會保存於 FoodSave 資料庫' in new['paragraphs'][0]
+            assert '取貨地點快照' in new['paragraphs'][0]
+            assert '不會因關閉或重新載入 App 而清除' in new['paragraphs'][0]
+        elif old['title']=='測試範圍':
+            assert new['paragraphs']==[p.replace('寄信量與服務可用性受全站配額及限時授權影響。','寄信量受全站配額及服務可用性影響。') for p in old['paragraphs']]
+        else:assert new==old
+    settings=json.loads((ROOT/'infra/privacy-public-settings.example.json').read_text())
+    assert settings['NEXT_PUBLIC_PRIVACY_POLICY_COMPLETE']=='true'
+    assert settings['FOODSAVE_PRIVACY_POLICY_COMPLETE']=='false'
+    assert settings['FOODSAVE_REGISTRATION_ENABLED']=='false'
+    with TestClient(app) as client:
+        assert POLICY['version'] in client.get('/privacy-policy').text

@@ -59,7 +59,7 @@ def build(source, output):
                 'external_store_created_or_modified': False,
                 'frontend_built_or_modified': False,
                 'real_mail_sent': False, 'real_sql_run': False,
-                'blockers': ['Policy amendment approval/synchronization and frontend privacy completion',
+                'blockers': ['Production deployment/verification of approved policy remains pending',
                              'Verified application ID/signing where applicable',
                              'Runtime identity/SID/rights and real isolated SQL validation',
                              'Production SQL/config backup and authorized deployment/recovery route'],

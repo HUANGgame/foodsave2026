@@ -105,6 +105,7 @@ def privacy():
 def privacy_policy_page():
     data=privacy();policy=data['policy']
     content='<h1>FoodSave 隱私與帳號刪除說明</h1><p>已定案的低流量測試政策；開放狀態以App即時檢查為準。</p>'
+    content+='<p>政策版本：'+escape(policy['version'])+'</p>'
     content+='<p>營運者：'+escape(data['operator'])+'；聯絡：'+escape(data['contact'])+'</p>'
     for section in policy['sections']:
         content+='<h2>'+escape(section['title'])+'</h2>'

@@ -15,3 +15,14 @@ test('formal-URL artifact retains live login and same-account merchant flow; all
  await expect(page.getByText('owner@example.invalid',{exact:true})).toBeVisible();await page.getByRole('link',{name:'我要上架'}).click();await expect(page.getByRole('heading',{name:'建立我的店家'})).toBeVisible();
  expect(paths).toContain('/auth/login');expect(paths).toContain('/me');expect(paths).not.toContain('/auth/logout');expect(paths).not.toContain('/auth/register');expect(errors).toEqual([]);
 });
+
+
+test('approved policy shows persisted location disclosures and version',async({page})=>{
+ await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
+ await page.goto('/privacy/');
+ await expect(page.getByText('政策版本：foodsave-test-20261007-v2')).toBeVisible();
+ await expect(page.getByText(/FoodSave 附近查詢會將本次查詢座標送至 FoodSave 後端/)).toBeVisible();
+ await expect(page.getByText(/取貨地點快照/)).toBeVisible();
+ await expect(page.getByText(/關閉或重新載入 App 而清除/)).toBeVisible();
+ await expect(page.getByText(/限時授權/)).toHaveCount(0);
+});

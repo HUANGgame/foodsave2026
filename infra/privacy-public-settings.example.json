@@ -7,5 +7,5 @@
   "NEXT_PUBLIC_OPERATOR_NAME": "HUANG",
   "NEXT_PUBLIC_PRIVACY_CONTACT": "413637629@o365.tku.edu.tw",
   "NEXT_PUBLIC_RETENTION_SUMMARY": "刪帳受理後立即停用並撤銷登入，由HUANG追蹤並於30天內人工完成清除；訂單與通知處理完後不額外保留業務資料，清除處理紀錄保留30天。SQL備份依現有7天週期到期，寄信供應商內部紀錄期限未由目前設定揭露。",
-  "NEXT_PUBLIC_PRIVACY_POLICY_COMPLETE": "false"
+  "NEXT_PUBLIC_PRIVACY_POLICY_COMPLETE": "true"
 }
