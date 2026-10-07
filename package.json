@@ -9,7 +9,8 @@
     "test:e2e": "playwright test",
     "android:sync": "npm run build && cap sync android",
     "build:release": "node scripts/check-release-config.cjs && next build && node scripts/check-live-bundle.cjs",
-    "test:live": "playwright test -c playwright.live.config.ts"
+    "test:live": "playwright test -c playwright.live.config.ts",
+    "check:release:android": "node scripts/check-release-config.cjs && node scripts/check-android-release.cjs"
   },
   "dependencies": {
     "@capacitor/android": "7.4.3",
