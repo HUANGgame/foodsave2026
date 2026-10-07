@@ -48,13 +48,13 @@ def test_candidate_manifest_matches_exact_git_source_and_preserves_history():
     original=subprocess.check_output(['git','show','6fc637d18e9430ebf98c2ead27dc8aaab755429c:release/20261006/source-hashes.json'],cwd=v.ROOT)
     assert historical.read_bytes()==original
     old=json.loads(original)
-    assert current['commit']==v.SOURCE=='3b6435beb834c161a17a879430119f5c53ea45a0'
+    assert current['commit']==v.SOURCE=='e5290df728a85a2b50b228a3d8ef1b601971f9f0'
     assert set(current['files'])==set(old['files'])
-    assert [p for p in current['files'] if current['files'][p]!=old['files'][p]]==['backend/foodsave/account_mail.py']
+    assert [p for p in current['files'] if current['files'][p]!=old['files'][p]]==['backend/foodsave/account_mail.py','backend/foodsave/api.py','backend/foodsave/static/privacy-policy.json']
     for name,digest in current['files'].items():
         assert hashlib.sha256(subprocess.check_output(['git','show',v.SOURCE+':'+name],cwd=v.ROOT)).hexdigest()==digest
 
-@pytest.mark.parametrize('name',['backend/foodsave/account_mail.py','backend/foodsave/static/demo-prizes.json'])
+@pytest.mark.parametrize('name',['backend/foodsave/account_mail.py','backend/foodsave/static/demo-prizes.json','backend/foodsave/static/privacy-policy.json'])
 def test_new_candidate_mail_and_fallback_hashes_cannot_be_bypassed(tmp_path,monkeypatch,name):
     data=json.loads(v.MANIFEST.read_text());data['files'][name]='0'*64
     wrong=tmp_path/'manifest.json';wrong.write_text(json.dumps(data));monkeypatch.setattr(v,'MANIFEST',wrong)

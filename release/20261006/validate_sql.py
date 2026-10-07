@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from uuid import uuid4
 ROOT=Path(__file__).resolve().parents[2]
 DATABASE='foodsave-validation-20261006'
-SOURCE='3b6435beb834c161a17a879430119f5c53ea45a0'
+SOURCE='e5290df728a85a2b50b228a3d8ef1b601971f9f0'
 MANIFEST=Path(__file__).with_name('source-hashes.json')
 class CheckFailed(Exception):pass
 def check(ok,name):

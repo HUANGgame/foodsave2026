@@ -1,11 +1,11 @@
 {
-  "commit": "e5290df728a85a2b50b228a3d8ef1b601971f9f0",
+  "commit": "3b6435beb834c161a17a879430119f5c53ea45a0",
   "files": {
     "backend/foodsave/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "backend/foodsave/account_mail.py": "0a3cf6d9adfe03f1b1de0e204494897f52fd3aed343ac503a8846b5ce9269ef2",
     "backend/foodsave/accounts.py": "1864ab0e832f790060d554115ab917f2b53e5656829f7cc0cb13169563774b87",
     "backend/foodsave/admin.py": "5961cd19e4f3234fd25c4700c1c981e187c8688f31057043bb1ec34cd48b50ab",
-    "backend/foodsave/api.py": "b43c392692b91c23d06a4e8c5368f0b455eb92b3ef35b07d802f6aee9f410821",
+    "backend/foodsave/api.py": "268a64d644665ad5451f4b06725c1f8f1e418c9d567aad03cc69123037013ca2",
     "backend/foodsave/cli.py": "2bd05d1cf9fd4b5ff938630f8e1c27ecbc335d9382facca0e2abc96e48f5dfd0",
     "backend/foodsave/db.py": "3f0973d24317e952d1b0e85cd3f910ff6e5dc521aabe733c5193769081367bc5",
     "backend/foodsave/demo_prizes.py": "6026ec11cd539e35c28f95c35bdf2dac84f5b00ebb16819a261146e25ed0cd56",
@@ -23,7 +23,7 @@
     "backend/foodsave/static/admin.html": "55af17eca31e9bb76ed23b1be24f0c3b49f6187033fe42fea4769a99b33ef256",
     "backend/foodsave/static/admin.js": "bcdb01151c8e54aa787f1a3dfc9764f4946f7f8294f8cbdab83f8a82c123ebec",
     "backend/foodsave/static/demo-prizes.json": "7d6e4ec10d7bf5ed99d3868d9077e3831ba16b407a7ad100fa092f45285f5013",
-    "backend/foodsave/static/privacy-policy.json": "46c2ca6463ed08d8abdfda1a3549d42321dba1256bd65827ac1062e1434df1ee",
+    "backend/foodsave/static/privacy-policy.json": "15d08905ca55ea84bfcc2c999c0a2259070dd19be0da151ba8021fc37c00137b",
     "backend/foodsave/welcome.py": "98cedb63b62183e982147f24d4f2977a6853bfc7c95e64beadb939caecc6c0b5",
     "backend/migrations/001_core.sql": "2e40d146a4c0c6e9de76881bd6fcd3125dbb3700f67db7fdc399bf6618ae41e6",
     "backend/migrations/002_rankings.sql": "4996a65bd28854d87d55df22f17c3b3e406eadf55c59d384fe9e39e93a9c102d",
