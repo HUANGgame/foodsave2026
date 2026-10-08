@@ -1,0 +1,91 @@
+# Manual, isolated test database validation. No deployment or production access.
+trigger: none
+pr: none
+
+parameters:
+- name: runRollback
+  type: boolean
+  default: false
+- name: tenantId
+  type: string
+  default: '399232fb-17d1-45ca-bda6-5b540441bd62'
+- name: clientId
+  type: string
+  default: '1424737d-18e2-4e47-acea-9c2d7aa123e7'
+- name: serviceConnectionId
+  type: string
+  default: 'bed364c8-145a-423d-81e4-5af179a9a9f8'
+
+pool:
+  vmImage: ubuntu-24.04
+
+jobs:
+- job: ValidateIsolatedSql
+  displayName: Validate the isolated SQL database
+  timeoutInMinutes: 15
+  cancelTimeoutInMinutes: 1
+  condition: and(eq(variables['Build.Reason'], 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/foodsave-azure-checks-20261008'))
+  steps:
+  - checkout: self
+    clean: true
+    fetchDepth: 0
+    persistCredentials: false
+    submodules: false
+    lfs: false
+
+  - bash: |
+      set -euo pipefail
+      test "$(git rev-parse --show-toplevel)" = "$PWD"
+      git merge-base --is-ancestor 1ec5b4ffd89ec1ff4d46b6ac2485b6d91bf99ef8 HEAD
+      test -z "$(git diff --name-only 1ec5b4ffd89ec1ff4d46b6ac2485b6d91bf99ef8 -- backend release/20261006)"
+      python3 -I -B release/20261008/validate_sql_wif.py
+    displayName: Verify source pins and no-connect adapter checks
+    timeoutInMinutes: 2
+
+  - ${{ if eq(parameters.runRollback, true) }}:
+    # A supported connectedService task makes the endpoint an explicit resource
+    # in this job. The command only reads the preinstalled .NET version.
+    # No Azure CLI login, ARM request, project build, or package restore occurs.
+    - task: DotNetCoreCLI@2
+      displayName: Reference the authorized WIF service connection
+      timeoutInMinutes: 1
+      inputs:
+        azureSubscription: 'foodsave-sql-validation-20261008'
+        command: custom
+        custom: '--version'
+        projects: ''
+        arguments: ''
+      env:
+        DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+        DOTNET_NOLOGO: '1'
+        DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+        DOTNET_CLI_HOME: $(Agent.TempDirectory)/foodsave-dotnet
+    - bash: |
+        set -euo pipefail
+        . /etc/os-release
+        test "$ID" = ubuntu
+        test "$VERSION_ID" = 24.04
+        python3 -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+        python3 -m venv "$AGENT_TEMPDIRECTORY/foodsave-sql-validation-venv"
+        "$AGENT_TEMPDIRECTORY/foodsave-sql-validation-venv/bin/python" -m pip install --disable-pip-version-check --no-cache-dir --only-binary=:all: -r backend/requirements.txt
+        if ! "$AGENT_TEMPDIRECTORY/foodsave-sql-validation-venv/bin/python" -c 'import pyodbc; raise SystemExit("ODBC Driver 18 for SQL Server" not in pyodbc.drivers())'; then
+          curl --fail --silent --show-error --location --connect-timeout 10 --max-time 60 https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -o "$AGENT_TEMPDIRECTORY/foodsave-microsoft-prod.deb"
+          sudo dpkg -i "$AGENT_TEMPDIRECTORY/foodsave-microsoft-prod.deb"
+          sudo apt-get update -qq
+          sudo env ACCEPT_EULA=Y DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends msodbcsql18
+        fi
+        "$AGENT_TEMPDIRECTORY/foodsave-sql-validation-venv/bin/python" -I -B release/20261008/validate_sql_wif.py
+      displayName: Install approved SQL validation dependencies
+      timeoutInMinutes: 4
+
+    - bash: |
+        set -euo pipefail
+        timeout --signal=TERM --kill-after=45s 450s "$AGENT_TEMPDIRECTORY/foodsave-sql-validation-venv/bin/python" -I -B release/20261008/validate_sql_wif.py --run-rollback
+      displayName: Run the pinned rollback validation once
+      timeoutInMinutes: 8
+      env:
+        FOODSAVE_WIF_TENANT_ID: ${{ parameters.tenantId }}
+        FOODSAVE_WIF_CLIENT_ID: ${{ parameters.clientId }}
+        FOODSAVE_WIF_SERVICE_CONNECTION_ID: ${{ parameters.serviceConnectionId }}
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+        SYSTEM_OIDCREQUESTURI: $(System.OidcRequestUri)
