@@ -1,0 +1,124 @@
+trigger: none
+pr: none
+
+jobs:
+- job: LocalChecks
+  displayName: FoodSave local checks
+  condition: eq(variables['Build.Reason'], 'Manual')
+  timeoutInMinutes: 20
+  cancelTimeoutInMinutes: 1
+  pool:
+    vmImage: ubuntu-24.04
+  steps:
+  - checkout: self
+    clean: true
+    fetchDepth: 0
+    fetchTags: false
+    persistCredentials: false
+    submodules: false
+    lfs: false
+
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '3.12'
+      architecture: x64
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '22.x'
+      checkLatest: false
+
+  - bash: |
+      set -euo pipefail
+      pin=1ec5b4ffd89ec1ff4d46b6ac2485b6d91bf99ef8
+      target="$(Pipeline.Workspace)/foodsave-pinned-$(Build.BuildId)"
+      backup="$(Agent.TempDirectory)/foodsave-source-$(Build.BuildId).tar"
+      test ! -e "$target"
+      test ! -e "$backup"
+      git cat-file -e "$pin^{commit}"
+      git cat-file -e e5290df728a85a2b50b228a3d8ef1b601971f9f0^{commit}
+      git cat-file -e 6fc637d18e9430ebf98c2ead27dc8aaab755429c^{commit}
+      git cat-file -e 9b924eb2397d9c88625f0f4d149b46f5be9429f8^{commit}
+      git worktree add --detach "$target" "$pin"
+      test "$(git -C "$target" rev-parse HEAD)" = "$pin"
+      test -z "$(git -C "$target" status --porcelain)"
+      git archive --format=tar --output="$backup" "$pin"
+      python - "$backup" "$target" <<'PY'
+      import hashlib
+      import pathlib
+      import sys
+      import tarfile
+      archive_path, root = map(pathlib.Path, sys.argv[1:])
+      checked = 0
+      with tarfile.open(archive_path) as archive:
+          for member in archive.getmembers():
+              if member.isdir():
+                  continue
+              if not member.isfile():
+                  raise SystemExit("Unexpected archive entry")
+              path = pathlib.PurePosixPath(member.name)
+              if path.is_absolute() or ".." in path.parts:
+                  raise SystemExit("Unsafe archive path")
+              if archive.extractfile(member).read() != (root / member.name).read_bytes():
+                  raise SystemExit("Backup verification failed")
+              checked += 1
+      if not checked:
+          raise SystemExit("Empty source backup")
+      print("Verified source backup files:", checked)
+      print("Backup SHA256:", hashlib.sha256(archive_path.read_bytes()).hexdigest())
+      PY
+      printf 'Pinned source: %s\n' "$pin"
+    displayName: Create pinned worktree and verify source backup
+    workingDirectory: $(Build.SourcesDirectory)
+
+  - bash: |
+      set -euo pipefail
+      for name in ${!FOODSAVE_@}; do unset "$name"; done
+      python release/20261006/validate_sql.py
+    displayName: Validate SQL source hashes without connecting
+    workingDirectory: $(Pipeline.Workspace)/foodsave-pinned-$(Build.BuildId)
+
+  - bash: |
+      set -euo pipefail
+      if ! python -c 'import ctypes; ctypes.CDLL("libodbc.so.2")'; then
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends libodbc2
+      fi
+      python -m pip install --disable-pip-version-check --no-input --only-binary=:all: -r backend/requirements-test.txt
+      python -c 'import pyodbc; print("pyodbc import passed; no connection opened")'
+      npm ci --ignore-scripts --no-audit --no-fund
+    displayName: Install test dependencies
+    workingDirectory: $(Pipeline.Workspace)/foodsave-pinned-$(Build.BuildId)
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      NEXT_TELEMETRY_DISABLED: '1'
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+  - bash: |
+      set -euo pipefail
+      for name in ${!FOODSAVE_@}; do unset "$name"; done
+      export PYTHONPATH="$PWD:$PWD/backend"
+      python -m pytest -c backend/pytest.ini -q backend/tests release/20261006/test_release_preparation.py
+    displayName: Run backend and preparation tests
+    workingDirectory: $(Pipeline.Workspace)/foodsave-pinned-$(Build.BuildId)
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+
+  - bash: |
+      set -euo pipefail
+      npm test
+      npm run build
+    displayName: Run frontend unit tests and static demo build
+    workingDirectory: $(Pipeline.Workspace)/foodsave-pinned-$(Build.BuildId)
+    env:
+      CI: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PUBLIC_APP_MODE: demo
+      NEXT_PUBLIC_API_BASE_URL: ''
+
+  - bash: |
+      printf '%s\n' \
+        'Scope: local unit/mock/SQLite tests, static demo build and SQL source checks.' \
+        'No external database, migration, grant, deployment or real mail execution.' \
+        'This run does not establish Azure SQL, live API, Android or release acceptance.'
+    displayName: Record validation scope
+    condition: always()
