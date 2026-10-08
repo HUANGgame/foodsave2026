@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from datetime import datetime
 import json
 import math
+import re
 from pathlib import Path
 import sqlite3
 from uuid import UUID
@@ -48,7 +49,10 @@ INSERT INTO dbo.users VALUES ('owner','consumer',1),('inactive','consumer',0),('
     def begin(self):yield self
 
     def rows(self,c,sql,**parameters):
-        assert sql in (nearby.STORES_SQL,nearby.PRODUCTS_SQL)
+        assert sql.startswith(nearby.NEARBY_CTE)
+        assert sql.endswith(('ORDER BY s.id\n', 'ORDER BY p.id\n'))
+        assert set(re.findall(r'(?<!:):([a-zA-Z_]\w*)', sql)) == set(parameters)
+        assert all(value is not None for value in parameters.values())
         self.executed.append((sql,parameters))
         # Only adapt SQL Server row-limit syntax; use the actual production CTE.
         adapted=sql.replace('SELECT TOP (:fetch)','SELECT')+' LIMIT :fetch'
@@ -217,3 +221,50 @@ def test_legacy_lists_keep_array_contract_without_200_item_cutoff(monkeypatch):
     assert len(svc.vendor_catalog({'id':'vendor','role':'vendor'})['products'])==305
     assert all('FETCH NEXT 200' not in q for q in queries)
     assert all('s.location_confirmed=1' in q for q in queries[:2])
+
+
+@pytest.mark.parametrize('resource,store_id', [
+    ('stores', None), ('products', None),
+    ('products', identity(0)), ('products', identity((1 << 128) - 1)),
+])
+@pytest.mark.parametrize('after', [None, identity(0), identity((1 << 128) - 1)])
+def test_optional_query_filters_have_only_non_null_bound_values(resource, after, store_id):
+    parameters, _ = nearby.parameters(resource, 25, 121, 50, None, store_id)
+    parameters['after'] = after
+    before = dict(parameters)
+    sql, bindings = nearby.query(resource, parameters, store_id)
+    assert parameters == before
+    assert sql.startswith(nearby.NEARBY_CTE)
+    assert sql.endswith('ORDER BY ' + ('s' if resource == 'stores' else 'p') + '.id\n')
+    assert (':after' in sql) == (after is not None)
+    assert (':store_id' in sql) == (resource == 'products' and store_id is not None)
+    assert ' IS NULL OR ' not in sql
+    assert set(re.findall(r'(?<!:):([a-zA-Z_]\w*)', sql)) == set(bindings)
+    assert all(value is not None for value in bindings.values())
+    assert {key: bindings[key] for key in before if key != 'after'} == {
+        key: value for key, value in before.items() if key != 'after'}
+    if after is not None:
+        assert bindings['after'] == after
+    if store_id is not None:
+        assert bindings['store_id'] == store_id
+    from sqlalchemy import text
+    from sqlalchemy.dialects.mssql.pyodbc import MSDialect_pyodbc
+    compiled = text(sql).bindparams(**bindings).compile(dialect=MSDialect_pyodbc(paramstyle='qmark'))
+    assert len(compiled.positiontup) == str(compiled).count('?')
+    assert all(compiled.params[key] is not None for key in compiled.positiontup)
+
+
+@pytest.mark.parametrize('changes', [{'after': 'bad'}, {'unexpected': 1}, {'fetch': None}])
+def test_query_builder_rejects_invalid_bindings(changes):
+    parameters, _ = nearby.parameters('products', 0, 0, 50, None)
+    with pytest.raises(HTTPException) as error:
+        nearby.query('products', {**parameters, **changes})
+    assert error.value.status_code == 422
+
+
+def test_query_builder_rejects_invalid_resource_and_store_filter():
+    parameters, _ = nearby.parameters('stores', 0, 0, 50, None)
+    for resource, store_id in (('unknown', None), ('stores', identity(1)), ('products', 'invalid')):
+        with pytest.raises(HTTPException) as error:
+            nearby.query(resource, parameters, store_id)
+        assert error.value.status_code == 422
