@@ -317,14 +317,16 @@ class Service:
 
     def nearby_stores(self, latitude, longitude, limit=50, cursor=None):
         parameters, scope = nearby.parameters('stores', latitude, longitude, limit, cursor)
+        sql, bindings = nearby.query('stores', parameters)
         with self.transaction() as c:
-            items = rows(c, nearby.STORES_SQL, **parameters)
+            items = rows(c, sql, **bindings)
         return nearby.page(items, limit, scope)
 
     def nearby_products(self, latitude, longitude, limit=50, cursor=None, store_id=None):
         parameters, scope = nearby.parameters('products', latitude, longitude, limit, cursor, store_id)
+        sql, bindings = nearby.query('products', parameters, store_id)
         with self.transaction() as c:
-            items = rows(c, nearby.PRODUCTS_SQL, **parameters, store_id=store_id)
+            items = rows(c, sql, **bindings)
         page = nearby.page(items, limit, scope)
         for item in page['items']:
             updated = item.pop('source_updated_at')
