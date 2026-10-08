@@ -47,7 +47,14 @@ def digest(statement):
 def safe_error(exc, phase=None):
     original = getattr(exc, "orig", exc)
     driver = type(original).__module__ == "pyodbc"
-    states, numbers = set(), set()
+    states, numbers, objects, functions = set(), set(), set(), set()
+    unrecognized_object = False
+    allowed_objects = {"dbo.stores", "dbo.users", "dbo.products", "dbo.request_results",
+                       "visible", "distances", "nearby"}
+    allowed_functions = {"SQLExecDirectW", "SQLExecDirect", "SQLExecute",
+                         "SQLPrepareW", "SQLPrepare", "SQLDescribeParam",
+                         "SQLBindParameter", "SQLSetDescField", "SQLSetDescFieldW",
+                         "SQLFetch", "SQLFetchScroll", "SQLMoreResults"}
     if driver:
         args = getattr(original, "args", ())
         if args and isinstance(args[0], str) and re.fullmatch(r"(?:[0-9]{2}|HY|IM)[A-Z0-9]{3}", args[0]):
@@ -56,6 +63,16 @@ def safe_error(exc, phase=None):
             if isinstance(value, str):
                 numbers.update(int(n) for n in re.findall(
                     r"\((-?\d{1,8})\)(?:\s+\(SQL[A-Za-z0-9_]+\))?(?=\s*(?:;|$))", value))
+                for token in re.findall(r"\((SQL[A-Za-z0-9_]+)\)", value):
+                    if token in allowed_functions:
+                        functions.add(token)
+                # Emit only fixed known labels, never captured arbitrary identifiers.
+                for token in re.findall(r"Invalid object name '([^'\r\n]{1,128})'", value, re.I):
+                    normalized = token.replace("[", "").replace("]", "").lower()
+                    if normalized in allowed_objects:
+                        objects.add(normalized)
+                    else:
+                        unrecognized_object = True
     name = type(exc).__name__
     if name not in {"ProgrammingError", "OperationalError", "InterfaceError",
                     "IntegrityError", "DataError", "DatabaseError", "InternalError",
@@ -63,7 +80,9 @@ def safe_error(exc, phase=None):
                     "ResourceClosedError", "InvalidRequestError"}:
         name = "Exception"
     return {"phase": phase or PHASE, "error_type": name, "driver_error": driver,
-            "sqlstates": sorted(states), "native_numbers": sorted(numbers)}
+            "sqlstates": sorted(states), "native_numbers": sorted(numbers),
+            "invalid_objects": sorted(objects), "unrecognized_invalid_object": unrecognized_object,
+            "odbc_functions": sorted(functions)}
 
 
 def record_error(exc, phase=None, **metadata):
@@ -94,7 +113,14 @@ def no_connect_checks(adapter, module):
     require("private-text" not in json.dumps(result))
     require(safe_error(Exception("private-text (102)"))["native_numbers"] == [])
     require(digest("SELECT 1") == hashlib.sha256(b"SELECT 1").hexdigest())
-    return adapter.no_connect_tests(module) + 3
+    known = safe_error(FakeError("42S02", "Invalid object name '[dbo].[products]'. (208) (SQLExecDirectW)"))
+    require(known["invalid_objects"] == ["dbo.products"]
+            and known["odbc_functions"] == ["SQLExecDirectW"]
+            and known["unrecognized_invalid_object"] is False)
+    unknown = safe_error(FakeError("42S02", "Invalid object name 'private-secret.table'. (208) (SQLExecDirectW)"))
+    require(unknown["invalid_objects"] == [] and unknown["unrecognized_invalid_object"] is True)
+    require("private-secret" not in json.dumps(unknown))
+    return adapter.no_connect_tests(module) + 6
 
 
 def verify_fresh(adapter):
