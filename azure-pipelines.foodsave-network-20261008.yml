@@ -1,0 +1,85 @@
+# Manual, credentialless Azure-hosted connectivity check.
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-24.04
+
+jobs:
+- job: NetworkDiagnostic
+  displayName: FoodSave credentialless network diagnostic
+  condition: eq(variables['Build.Reason'], 'Manual')
+  timeoutInMinutes: 3
+  steps:
+  - checkout: none
+  - bash: |
+      python3 -I -u - <<'PY'
+      import signal
+      import socket
+      import ssl
+      import urllib.error
+      import urllib.request
+
+      def deadline(signum, frame):
+          print("DIAGNOSTIC deadline exceeded", flush=True)
+          raise SystemExit(2)
+
+      signal.signal(signal.SIGALRM, deadline)
+      signal.alarm(100)
+      host = "karea-indoor-nav-sql-ea.database.windows.net"
+      print("SCOPE DNS and TCP connect/close only; no SQL/TDS/login or database operations.")
+      try:
+          addresses = socket.getaddrinfo(host, 1433, type=socket.SOCK_STREAM)
+          unique = list(dict.fromkeys(item[4][0] for item in addresses))
+          print("SQL_DNS OK addresses=" + ",".join(unique))
+      except OSError as exc:
+          addresses = []
+          print("SQL_DNS FAIL type=" + type(exc).__name__)
+      connected = False
+      seen = set()
+      for family, socktype, proto, canonname, sockaddr in addresses:
+          if sockaddr in seen:
+              continue
+          seen.add(sockaddr)
+          if len(seen) > 4:
+              break
+          try:
+              with socket.socket(family, socktype, proto) as connection:
+                  connection.settimeout(8)
+                  connection.connect(sockaddr)
+              print("SQL_TCP1433 OK connect-and-close only")
+              connected = True
+              break
+          except OSError as exc:
+              print("SQL_TCP1433 ATTEMPT_FAIL type=" + type(exc).__name__)
+      if not connected:
+          print("SQL_TCP1433 NOT_CONNECTED")
+
+      class NoRedirect(urllib.request.HTTPRedirectHandler):
+          def redirect_request(self, req, fp, code, msg, headers, newurl):
+              return None
+
+      opener = urllib.request.build_opener(
+          NoRedirect(),
+          urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+      )
+      targets = [
+          ("FRONTEND", "https://green-forest-0665cda00.5.azurestaticapps.net/"),
+          ("BACKEND_LIVE", "https://foodsave-web-tku-aqhxdnhpe8fdhfee.eastasia-01.azurewebsites.net/health/live"),
+      ]
+      for label, url in targets:
+          request = urllib.request.Request(url, method="GET")
+          try:
+              with opener.open(request, timeout=20) as response:
+                  print(label + "_HTTPS status=" + str(response.status))
+          except urllib.error.HTTPError as exc:
+              print(label + "_HTTPS status=" + str(exc.code))
+              exc.close()
+          except (urllib.error.URLError, OSError) as exc:
+              print(label + "_HTTPS FAIL type=" + type(exc).__name__)
+      signal.alarm(0)
+      print("SCOPE No response bodies, credentials, SQL authentication, readiness checks, deployments, or resource changes.")
+      print("RESULT Diagnostic finished; network reachability does not establish SQL access or production readiness.")
+      PY
+    displayName: Check DNS, TCP 1433, and HTTPS status only
+    timeoutInMinutes: 2
