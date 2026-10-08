@@ -125,8 +125,68 @@ def no_connect_checks(adapter, module):
     unknown = safe_error(FakeError("42S02", "Invalid object name 'private-secret.table'. (208) (SQLExecDirectW)"))
     require(unknown["invalid_objects"] == [] and unknown["unrecognized_invalid_object"] is True)
     require("private-secret" not in json.dumps(unknown))
-    return adapter.no_connect_tests(module) + 6 + candidate_no_connect_checks()
+    return (adapter.no_connect_tests(module) + 6 + candidate_no_connect_checks()
+            + reconnect_no_connect_checks(adapter, module))
 
+
+
+def fresh_token_listener(original_factory, module, credential):
+    original_guard = original_factory(module, credential)
+
+    def connect(dialect, connection_record, args, kwargs):
+        # SQLAlchemy reuses its creator args/kwargs. Never place token bytes there.
+        isolated_args = list(args)
+        isolated_kwargs = dict(kwargs)
+        original_guard(dialect, connection_record, isolated_args, isolated_kwargs)
+        connection = dialect.connect(*isolated_args, **isolated_kwargs)
+        require(connection is not None)
+        return connection
+    return connect
+
+
+def reconnect_no_connect_checks(adapter, module):
+    from types import SimpleNamespace
+    import time
+
+    class FakeCredential:
+        calls = 0
+
+        def get_token(self, scope):
+            require(scope == adapter.SQL_SCOPE)
+            self.calls += 1
+            return SimpleNamespace(token="fake-token-" + str(self.calls),
+                                   expires_on=time.time() + 600)
+
+    class FakeDialect:
+        name = "mssql"
+        driver = "pyodbc"
+
+        def connect(self, *args, **kwargs):
+            require(args == (adapter.CONNECTION,))
+            require(set(kwargs) == {"timeout", "attrs_before"} and kwargs["timeout"] == 15)
+            require(set(kwargs["attrs_before"]) == {1256})
+            return SimpleNamespace(token_bytes=kwargs["attrs_before"][1256])
+
+    credential = FakeCredential()
+    dialect = FakeDialect()
+    callback = fresh_token_listener(adapter.token_listener, module, credential)
+    args, kwargs = [adapter.CONNECTION], {"timeout": 15}
+    first = callback(dialect, None, args, kwargs)
+    second = callback(dialect, None, args, kwargs)
+    require(credential.calls == 2 and first is not second
+            and first.token_bytes != second.token_bytes)
+    require(args == [adapter.CONNECTION] and kwargs == {"timeout": 15})
+    for rejected in ({"timeout": 15, "attrs_before": {1256: b"unapproved"}},
+                     {"timeout": 15, "unexpected": True}):
+        before = credential.calls
+        try:
+            callback(dialect, None, args, rejected)
+        except adapter.GuardFailed:
+            require(credential.calls == before)
+        else:
+            raise GuardFailed()
+    require(args == [adapter.CONNECTION] and kwargs == {"timeout": 15})
+    return 4
 
 
 def specialize_nearby(statement, parameters):
@@ -320,9 +380,13 @@ def run_observed(adapter, module, batches):
     migration_labels = {digest(sql): name for name, sql in batches}
     original_run = module.run
     original_preflight = adapter.metadata_preflight
+    original_token_listener = adapter.token_listener
     sequence = 0
     connection_ordinals = {}
     candidate_digests = {}
+
+    def per_connect_factory(module, credential):
+        return fresh_token_listener(original_token_listener, module, credential)
 
     def before_execute(conn, clause, multiparams, params, execution_options):
         if not isinstance(clause, TextClause):
@@ -411,6 +475,7 @@ def run_observed(adapter, module, batches):
             registered.append((name, callback))
         module.run = observed_run
         adapter.metadata_preflight = preflight
+        adapter.token_listener = per_connect_factory
         mark("adapter_identity")
         result = adapter.run(module, batches)
         require(OBSERVATION["candidate_queries"] >= 6)
@@ -418,6 +483,7 @@ def run_observed(adapter, module, batches):
     finally:
         module.run = original_run
         adapter.metadata_preflight = original_preflight
+        adapter.token_listener = original_token_listener
         for name, callback in reversed(registered):
             event.remove(Engine, name, callback)
 
@@ -441,7 +507,8 @@ def main():
         if not args.run_rollback:
             emit({"mode": "plan", "connects": False, "authenticates": False,
                   "base_commit": BASE_COMMIT, "no_connect_checks": checks,
-                  "migration_count": len(batches), "sql_behavior_changed": True, "candidate": CANDIDATE})
+                  "migration_count": len(batches), "sql_behavior_changed": True, "candidate": CANDIDATE,
+                  "connection_adapter_candidate": "per_connect_parameter_copy"})
             return 0
         signal.alarm(420)
         result = run_observed(adapter, module, batches)
@@ -452,7 +519,8 @@ def main():
         signal.alarm(0)
     emit({"event": "summary", "mode": "observed_rollback", "status": status,
           "base_commit": BASE_COMMIT, **OBSERVATION, "errors": ERRORS,
-          "harness_result": result, "sql_behavior_changed": True, "candidate": CANDIDATE})
+          "harness_result": result, "sql_behavior_changed": True, "candidate": CANDIDATE,
+                  "connection_adapter_candidate": "per_connect_parameter_copy"})
     return int(status != "passed")
 
 
