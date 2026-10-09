@@ -1,0 +1,114 @@
+# Manual credentialless DNS/TCP-only check. No SQL/TDS/login, HTTP or settings changes.
+trigger: none
+pr: none
+pool:
+  vmImage: ubuntu-24.04
+jobs:
+- job: SqlTcpOnly
+  displayName: Check fixed SQL gateway DNS and TCP without credentials
+  timeoutInMinutes: 3
+  cancelTimeoutInMinutes: 1
+  condition: and(eq(variables['Build.Reason'], 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/foodsave-azure-checks-20261008'))
+  steps:
+  - checkout: none
+  - bash: |
+      set -euo pipefail
+      timeout --signal=KILL 45s python3 -I -B -u - <<'PY'
+      import datetime
+      import json
+      import os
+      import platform
+      import re
+      import signal
+      import socket
+      import subprocess
+      import sys
+      import time
+
+      HOST = "karea-indoor-nav-sql-ea.database.windows.net"
+      PORT = 1433
+      started = time.monotonic()
+      connected = False
+      dns_ok = False
+      expired = False
+
+      class Deadline(Exception):
+          pass
+
+      def interrupt(signum, frame):
+          raise Deadline()
+
+      def emit(event, **fields):
+          print(json.dumps({"event": event, **fields}, sort_keys=True), flush=True)
+
+      signal.signal(signal.SIGALRM, interrupt)
+      signal.alarm(42)  # Leave time to emit the summary before the external 45-second cap.
+      emit("scope", host=HOST, port=PORT, utc=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+           sends_application_bytes=False, authenticates=False, sql_executed=False,
+           measures_current_agent_only=True, max_addresses=4, per_address_seconds=5)
+      try:
+          image = {}
+          for key in ("ImageOS", "ImageVersion", "AGENT_OS", "AGENT_VERSION"):
+              value = os.environ.get(key, "")
+              image[key] = value if re.fullmatch(r"[A-Za-z0-9._ -]{1,100}", value) else "unavailable"
+          emit("agent_versions", python=platform.python_version(), **image)
+          try:
+              result = subprocess.run(
+                  ["dpkg-query", "--show", "--showformat=${Package}=${Version}\\n",
+                   "msodbcsql18", "unixodbc"], capture_output=True, text=True, timeout=5)
+              found = {}
+              for line in result.stdout.splitlines():
+                  match = re.fullmatch(r"(msodbcsql18|unixodbc)=([A-Za-z0-9.+:~_-]{1,80})", line)
+                  if match:
+                      found[match[1]] = match[2]
+              emit("installed_packages", msodbcsql18=found.get("msodbcsql18", "not-installed"),
+                   unixodbc=found.get("unixodbc", "not-installed"), installs_performed=False)
+          except (OSError, subprocess.SubprocessError):
+              emit("installed_packages", status="unavailable", installs_performed=False)
+          dns_start = time.monotonic()
+          try:
+              results = socket.getaddrinfo(HOST, PORT, type=socket.SOCK_STREAM)
+              addresses, seen = [], set()
+              for family, kind, protocol, canonical, address in results:
+                  key = (family, address)
+                  if key not in seen:
+                      seen.add(key)
+                      addresses.append((family, kind, protocol, address))
+                  if len(addresses) == 4:
+                      break
+              dns_ok = bool(addresses)
+              emit("dns", success=dns_ok, elapsed_ms=round((time.monotonic()-dns_start)*1000),
+                   addresses=[{"family": family, "ip": address[0]}
+                              for family, kind, protocol, address in addresses])
+          except OSError as error:
+              addresses = []
+              emit("dns", success=False, error_type=type(error).__name__,
+                   errno=error.errno, elapsed_ms=round((time.monotonic()-dns_start)*1000))
+          for number, (family, kind, protocol, address) in enumerate(addresses, 1):
+              attempt = time.monotonic()
+              try:
+                  with socket.socket(family, kind, protocol) as connection:
+                      connection.settimeout(5)
+                      connection.connect(address)
+                      # No send, recv, TLS, TDS prelogin, SQL authentication or query.
+                  connected = True
+                  emit("tcp_connect_close", attempt=number, success=True,
+                       elapsed_ms=round((time.monotonic()-attempt)*1000))
+                  break
+              except OSError as error:
+                  emit("tcp_connect_close", attempt=number, success=False,
+                       error_type=type(error).__name__, errno=error.errno,
+                       elapsed_ms=round((time.monotonic()-attempt)*1000))
+      except Deadline:
+          expired = True
+          emit("deadline", exceeded=True)
+      finally:
+          signal.alarm(0)
+      emit("summary", dns_resolved=dns_ok, tcp1433_connected=connected, deadline_exceeded=expired,
+           elapsed_ms=round((time.monotonic()-started)*1000), sql_authenticated=False,
+           database_readiness_verified=False, network_settings_modified=False,
+           limitation="TCP success proves only this current agent reached the gateway, not TLS/login/redirect/database readiness")
+      sys.exit(0 if connected and not expired else 1)
+      PY
+    displayName: Read installed versions, resolve DNS and connect-close TCP1433 only
+    timeoutInMinutes: 2
