@@ -1,0 +1,42 @@
+# Manual website candidate build. No deployment task, service connection or SQL.
+trigger: none
+pr: none
+pool:
+  vmImage: ubuntu-24.04
+jobs:
+- job: PackageWebsiteCandidate
+  displayName: Build the pinned live website candidate
+  timeoutInMinutes: 15
+  cancelTimeoutInMinutes: 1
+  condition: and(eq(variables['Build.Reason'], 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/foodsave-azure-checks-20261008'))
+  steps:
+  - checkout: self
+    clean: true
+    fetchDepth: 0
+    persistCredentials: false
+    submodules: false
+    lfs: false
+  - task: UseNode@1
+    inputs:
+      version: '22.x'
+    displayName: Use Node 22 for the pinned frontend dependencies
+  - bash: |
+      set -euo pipefail
+      test "$(git rev-parse --show-toplevel)" = "$PWD"
+      git merge-base --is-ancestor 40d8f44fffd8630482b4ae74e534a35d25c1b521 HEAD
+      test -z "$(git diff --name-only 40d8f44fffd8630482b4ae74e534a35d25c1b521 HEAD -- . ':(exclude)release/20261009-web' ':(exclude)azure-pipelines-web-package-20261009.yml')"
+      test -z "$(git status --porcelain)"
+      python3 -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+      python3 -B -m unittest discover -s release/20261009-web -p test_web_package.py -v
+      python3 -I -B release/20261009-web/build_web_package.py --work "$AGENT_TEMPDIRECTORY/foodsave-web-f5ea46c-work" --output "$BUILD_ARTIFACTSTAGINGDIRECTORY/web-f5ea46c"
+      test -z "$(git status --porcelain)"
+    displayName: Verify source, unit tests, types, release build and emitted bundle
+    timeoutInMinutes: 12
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+  - task: PublishPipelineArtifact@1
+    displayName: Preserve website candidate ZIP and manifest
+    inputs:
+      targetPath: '$(Build.ArtifactStagingDirectory)/web-f5ea46c'
+      artifact: 'foodsave-web-f5ea46c'
+      publishLocation: pipeline
