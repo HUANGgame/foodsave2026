@@ -1,0 +1,43 @@
+# Build-only packaging. No service connection, deployment or database access.
+trigger: none
+pr: none
+pool:
+  vmImage: ubuntu-24.04
+jobs:
+- job: PackageTestedBackend
+  displayName: Package the tested backend with its startup script
+  timeoutInMinutes: 10
+  cancelTimeoutInMinutes: 1
+  condition: and(eq(variables['Build.Reason'], 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/foodsave-azure-checks-20261008'))
+  steps:
+  - checkout: self
+    clean: true
+    fetchDepth: 0
+    persistCredentials: false
+    submodules: false
+    lfs: false
+  - bash: |
+      set -euo pipefail
+      test "$(git rev-parse --show-toplevel)" = "$PWD"
+      git merge-base --is-ancestor 5cd6e3884f577bf2104292b7a70d4f0674fb323d HEAD
+      test -z "$(git diff --name-only 5cd6e3884f577bf2104292b7a70d4f0674fb323d HEAD -- . ':(exclude)release/20261009-package' ':(exclude)azure-pipelines-backend-package-20261009.yml')"
+      test -z "$(git status --porcelain)"
+      python3 -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+      python3 -m venv "$AGENT_TEMPDIRECTORY/foodsave-package-venv"
+      "$AGENT_TEMPDIRECTORY/foodsave-package-venv/bin/python" -m pip install --disable-pip-version-check --no-cache-dir --only-binary=:all: -r backend/requirements-test.txt
+      "$AGENT_TEMPDIRECTORY/foodsave-package-venv/bin/python" -B -m unittest discover -s release/20261009-package -p test_backend_package.py -v
+      test -z "$(git status --porcelain)"
+    displayName: Verify source pins, ZIP contents and extracted liveness
+    timeoutInMinutes: 5
+  - bash: |
+      set -euo pipefail
+      "$AGENT_TEMPDIRECTORY/foodsave-package-venv/bin/python" -I -B release/20261009-package/build_backend_package.py --source f5ea46c7f9ddd8d5277783488188f90d6c4fa5f9 --output "$BUILD_ARTIFACTSTAGINGDIRECTORY/backend-f5ea46c"
+      test -z "$(git status --porcelain)"
+    displayName: Build pinned runtime ZIP and provenance manifest
+    timeoutInMinutes: 2
+  - task: PublishPipelineArtifact@1
+    displayName: Preserve backend candidate and manifest
+    inputs:
+      targetPath: '$(Build.ArtifactStagingDirectory)/backend-f5ea46c'
+      artifact: 'foodsave-backend-f5ea46c'
+      publishLocation: pipeline
