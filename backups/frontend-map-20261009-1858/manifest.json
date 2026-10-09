@@ -1,0 +1,20 @@
+{
+  "source_commit": "907f27d814d5c219a28e9a8dacf57a474f609f9e",
+  "scope": "Before approved frontend exploration and PWA integration",
+  "files": [
+    {
+      "original": "components/LiveApp.tsx",
+      "backup": "backups/frontend-map-20261009-1858/LiveApp.tsx",
+      "git_blob": "120ec5fca2848a2f4f18b37363d7490f099570fb",
+      "bytes": 18475
+    },
+    {
+      "original": "app/layout.tsx",
+      "backup": "backups/frontend-map-20261009-1858/layout.tsx",
+      "git_blob": "d9d6b35d596265ac5844fa6cfb2678bec27cb1ac",
+      "bytes": 512
+    }
+  ],
+  "restore": "Read and verify each backup blob before an explicitly approved restore. Do not reset other source changes.",
+  "production_backup": false
+}
