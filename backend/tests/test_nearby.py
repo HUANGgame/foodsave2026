@@ -17,6 +17,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from foodsave import nearby
+from foodsave.nearby_queries import query as nearby_query
 from foodsave.service import Service
 from foodsave.api import app, service
 import foodsave.service as operations
@@ -232,7 +233,7 @@ def test_optional_query_filters_have_only_non_null_bound_values(resource, after,
     parameters, _ = nearby.parameters(resource, 25, 121, 50, None, store_id)
     parameters['after'] = after
     before = dict(parameters)
-    sql, bindings = nearby.query(resource, parameters, store_id)
+    sql, bindings = nearby_query(resource, parameters, store_id)
     assert parameters == before
     assert sql.startswith(nearby.NEARBY_CTE)
     assert sql.endswith('ORDER BY ' + ('s' if resource == 'stores' else 'p') + '.id\n')
@@ -258,7 +259,7 @@ def test_optional_query_filters_have_only_non_null_bound_values(resource, after,
 def test_query_builder_rejects_invalid_bindings(changes):
     parameters, _ = nearby.parameters('products', 0, 0, 50, None)
     with pytest.raises(HTTPException) as error:
-        nearby.query('products', {**parameters, **changes})
+        nearby_query('products', {**parameters, **changes})
     assert error.value.status_code == 422
 
 
@@ -266,5 +267,5 @@ def test_query_builder_rejects_invalid_resource_and_store_filter():
     parameters, _ = nearby.parameters('stores', 0, 0, 50, None)
     for resource, store_id in (('unknown', None), ('stores', identity(1)), ('products', 'invalid')):
         with pytest.raises(HTTPException) as error:
-            nearby.query(resource, parameters, store_id)
+            nearby_query(resource, parameters, store_id)
         assert error.value.status_code == 422
