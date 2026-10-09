@@ -1,0 +1,19 @@
+{
+  "source_commit": "907f27d814d5c219a28e9a8dacf57a474f609f9e",
+  "dependency": "ol@10.11.0",
+  "files": [
+    {
+      "original": "package.json",
+      "backup": "backups/frontend-map-20261009-1858/package.json",
+      "git_blob": "9af41a86a14b6e9b39bb3422584b01a304f21a3a",
+      "bytes": 1305
+    },
+    {
+      "original": "package-lock.json",
+      "backup": "backups/frontend-map-20261009-1858/package-lock.json",
+      "git_blob": "320979766b87fc2cf52229187c3c0a194c426bc1",
+      "bytes": 124969
+    }
+  ],
+  "generated_lock_requirement": "Generate only on Azure from npm official registry; do not hand-edit transitive dependency metadata."
+}
