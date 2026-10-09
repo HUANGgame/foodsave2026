@@ -1,0 +1,81 @@
+# Manual readback of the already-generated Build 21 dependency artifact only.
+trigger: none
+pr: none
+pool:
+  vmImage: ubuntu-24.04
+jobs:
+- job: ReadFrontendDependencyArtifact
+  displayName: Verify and read existing frontend dependency manifests
+  condition: and(eq(variables['Build.Reason'], 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/foodsave-azure-checks-20261008'))
+  timeoutInMinutes: 5
+  cancelTimeoutInMinutes: 1
+  steps:
+  - checkout: none
+  - task: DownloadPipelineArtifact@2
+    displayName: Read the exact Build 21 artifact
+    inputs:
+      buildType: specific
+      project: b21e6783-ad7f-4899-84a3-8557f8e39bc3
+      definition: '12'
+      buildVersionToDownload: specific
+      pipelineId: '21'
+      artifactName: foodsave-frontend-dependencies-21
+      targetPath: $(Agent.TempDirectory)/foodsave-dependency-readback-$(Build.BuildId)
+  - bash: |
+      set -euo pipefail
+      python3 -I -B - "$AGENT_TEMPDIRECTORY/foodsave-dependency-readback-$BUILD_BUILDID" <<'PY'
+      import base64, hashlib, json, pathlib, sys
+      from urllib.parse import urlparse
+      root = pathlib.Path(sys.argv[1])
+      expected = {
+          "package.json": "24983e58f44917e8e04cc6c426965f4dcd35ee30b0f804052d0d2b1b6f9c6eba",
+          "package-lock.json": "13f7b1cd987aa88577f5c109a9e634342af6ea469f8f4cb9b8e3bc96912c7d48",
+      }
+      def require(ok, message):
+          if not ok:
+              raise SystemExit(message)
+      manifest_path = root / "manifest.json"
+      require(manifest_path.is_file() and not manifest_path.is_symlink(), "Manifest missing")
+      manifest = json.loads(manifest_path.read_text())
+      require(manifest["source_commit"] == "2e92a9faeb22340cfaf0d3535e74115586d6a975", "Wrong artifact source")
+      require(manifest["dependency"] == "ol@10.11.0", "Wrong dependency")
+      blocked = {"password", "_password", "_auth", "_authtoken", "authorization", "access_token", "private_key", "client_secret"}
+      def inspect(value):
+          if isinstance(value, dict):
+              require(not any(str(key).lower() in blocked for key in value), "Credential-shaped field refused")
+              for child in value.values():
+                  inspect(child)
+          elif isinstance(value, list):
+              for child in value:
+                  inspect(child)
+      verified = []
+      for name, digest in expected.items():
+          path = root / name
+          require(path.is_file() and not path.is_symlink(), "Expected regular file")
+          raw = path.read_bytes()
+          require(0 < len(raw) <= 524288, "File outside bounded size")
+          require(hashlib.sha256(raw).hexdigest() == digest, "Artifact SHA256 mismatch")
+          require(manifest["files"][name]["sha256"] == digest, "Manifest SHA256 mismatch")
+          data = json.loads(raw.decode("utf-8"))
+          inspect(data)
+          if name == "package.json":
+              require(data["dependencies"]["ol"] == "10.11.0", "Wrong ol version")
+          else:
+              require(data["packages"]["node_modules/ol"]["version"] == "10.11.0", "Wrong locked ol version")
+              for entry in data["packages"].values():
+                  if not entry.get("resolved"):
+                      continue
+                  url = urlparse(entry["resolved"])
+                  require(url.scheme == "https" and url.hostname == "registry.npmjs.org" and not url.username and not url.password and not url.query, "Unexpected resolved package URL")
+          blob = hashlib.sha1(b"blob " + str(len(raw)).encode("ascii") + b"\0" + raw).hexdigest()
+          verified.append((name, raw, digest, blob))
+      for name, raw, digest, blob in verified:
+          encoded = base64.b64encode(raw).decode("ascii")
+          chunks = [encoded[index:index+8192] for index in range(0, len(encoded), 8192)]
+          print("ARTIFACT_BEGIN " + json.dumps({"name": name, "bytes": len(raw), "sha256": digest, "git_blob_sha": blob, "chunks": len(chunks)}, separators=(",", ":")))
+          for index, chunk in enumerate(chunks):
+              print("ARTIFACT_CHUNK " + name + " " + str(index) + " " + chunk)
+          print("ARTIFACT_END " + name)
+      print("READBACK_COMPLETE Build 21 only; no dependency generation, application execution or repository write.")
+      PY
+    displayName: Verify exact bytes and print bounded non-secret JSON payloads
