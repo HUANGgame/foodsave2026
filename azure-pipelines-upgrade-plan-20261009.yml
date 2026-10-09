@@ -1,0 +1,37 @@
+# Offline preparation only. No endpoint, token, SQL execution or deployment.
+trigger: none
+pr: none
+pool:
+  vmImage: ubuntu-24.04
+jobs:
+- job: CheckUpgradePreparation
+  displayName: Check populated-upgrade preparation without SQL
+  timeoutInMinutes: 5
+  cancelTimeoutInMinutes: 1
+  condition: and(eq(variables['Build.Reason'], 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/foodsave-azure-checks-20261008'))
+  steps:
+  - checkout: self
+    clean: true
+    fetchDepth: 0
+    persistCredentials: false
+    submodules: false
+    lfs: false
+  - bash: |
+      set -euo pipefail
+      test "$(git rev-parse --show-toplevel)" = "$PWD"
+      git merge-base --is-ancestor 9e5bd9e257f73f6b83c7639a707ebc24b119e370 HEAD
+      test -z "$(git diff --name-only 9e5bd9e257f73f6b83c7639a707ebc24b119e370 HEAD -- . ':(exclude)release/20261009-upgrade' ':(exclude)azure-pipelines-upgrade-plan-20261009.yml')"
+      test -z "$(git status --porcelain)"
+      python3 -B -m unittest discover -s release/20261009-upgrade -p test_upgrade_preparation.py -v
+      mkdir "$BUILD_ARTIFACTSTAGINGDIRECTORY/upgrade-plan"
+      python3 -I -B release/20261009-upgrade/validate_upgrade.py > "$BUILD_ARTIFACTSTAGINGDIRECTORY/upgrade-plan/plan.json"
+      cat "$BUILD_ARTIFACTSTAGINGDIRECTORY/upgrade-plan/plan.json"
+      test -z "$(git status --porcelain)"
+    displayName: Verify source pins, disabled SQL gate and offline assertions
+    timeoutInMinutes: 3
+  - task: PublishPipelineArtifact@1
+    displayName: Preserve offline plan, not SQL execution evidence
+    inputs:
+      targetPath: '$(Build.ArtifactStagingDirectory)/upgrade-plan'
+      artifact: 'foodsave-upgrade-offline-plan'
+      publishLocation: pipeline
