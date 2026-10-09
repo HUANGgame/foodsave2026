@@ -1,0 +1,142 @@
+# Manual frontend verification using synthetic API fixtures only.
+# This is not a production release gate or a deployment pipeline.
+trigger: none
+pr: none
+pool:
+  vmImage: ubuntu-24.04
+jobs:
+- job: VerifyFrontendParity
+  displayName: Verify frontend explorer and existing live flows
+  condition: and(eq(variables['Build.Reason'], 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/foodsave-azure-checks-20261008'))
+  timeoutInMinutes: 35
+  cancelTimeoutInMinutes: 2
+  steps:
+  - checkout: self
+    clean: true
+    fetchDepth: 0
+    fetchTags: false
+    persistCredentials: false
+    submodules: false
+    lfs: false
+  - task: UseNode@1
+    inputs:
+      version: '22.x'
+    displayName: Use Node 22
+  - bash: |
+      set -euo pipefail
+      test "$TF_BUILD" = True
+      test "$BUILD_REASON" = Manual
+      test "$(git rev-parse HEAD)" = "$BUILD_SOURCEVERSION"
+      git merge-base --is-ancestor 907f27d814d5c219a28e9a8dacf57a474f609f9e HEAD
+      test -z "$(git status --porcelain)"
+      work="$AGENT_TEMPDIRECTORY/foodsave-parity-$BUILD_BUILDID-$SYSTEM_JOBATTEMPT"
+      backup="$AGENT_TEMPDIRECTORY/foodsave-parity-$BUILD_BUILDID-$SYSTEM_JOBATTEMPT-source.tar"
+      report="$BUILD_ARTIFACTSTAGINGDIRECTORY/frontend-parity"
+      test ! -e "$work"
+      test ! -e "$backup"
+      test ! -e "$report"
+      mkdir -p "$work" "$report"
+      git archive --format=tar --output="$backup" HEAD
+      tar -xf "$backup" -C "$work"
+      python3 - "$backup" "$work" <<'PY'
+      import pathlib, sys, tarfile
+      archive_path, root = map(pathlib.Path, sys.argv[1:])
+      checked = 0
+      with tarfile.open(archive_path) as archive:
+          for member in archive.getmembers():
+              if member.isdir():
+                  continue
+              if not member.isfile():
+                  raise SystemExit('Unexpected non-regular source entry')
+              rel = pathlib.PurePosixPath(member.name)
+              if rel.is_absolute() or '..' in rel.parts:
+                  raise SystemExit('Unsafe source archive path')
+              if archive.extractfile(member).read() != (root / member.name).read_bytes():
+                  raise SystemExit('Source copy differs from source backup')
+              checked += 1
+      if not checked:
+          raise SystemExit('Empty source archive')
+      print('Verified source-copy files:', checked)
+      PY
+      test -f "$work/tests/live/explorer.spec.ts"
+      test -f "$work/playwright.frontend-parity.config.ts"
+      printf '%s\n' "$BUILD_SOURCEVERSION" > "$report/source-commit.txt"
+      sha256sum "$backup" > "$report/source-backup-sha256.txt"
+      printf '%s\n' \
+        'Synthetic frontend verification only.' \
+        'No deployment, SQL, service connection, live authentication or production secret is used.' \
+        'npm run build:release is not run: its production hostname gate rejects api.foodsave.test.' \
+        'A successful run is not production release acceptance.' > "$report/scope.txt"
+      echo '##vso[task.setvariable variable=frontendParityPrepared]true'
+    displayName: Verify revision and prepare isolated source copy with backup
+    workingDirectory: $(Build.SourcesDirectory)
+  - bash: |
+      set -euo pipefail
+      npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/
+      ./node_modules/.bin/playwright install --with-deps chromium
+      node --version
+      npm --version
+      ./node_modules/.bin/playwright --version
+    displayName: Install locked dependencies and matching Chromium
+    workingDirectory: $(Agent.TempDirectory)/foodsave-parity-$(Build.BuildId)-$(System.JobAttempt)
+    env:
+      CI: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+  - bash: |
+      set -euo pipefail
+      npm test 2>&1 | tee "$BUILD_ARTIFACTSTAGINGDIRECTORY/frontend-parity/unit.log"
+    displayName: Run all frontend unit tests
+    workingDirectory: $(Agent.TempDirectory)/foodsave-parity-$(Build.BuildId)-$(System.JobAttempt)
+    env:
+      CI: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+  - bash: |
+      set -euo pipefail
+      npm run build 2>&1 | tee "$BUILD_ARTIFACTSTAGINGDIRECTORY/frontend-parity/build.log"
+      ./node_modules/.bin/tsc --noEmit --incremental false 2>&1 | tee "$BUILD_ARTIFACTSTAGINGDIRECTORY/frontend-parity/types.log"
+      node scripts/check-live-bundle.cjs out https://api.foodsave.test 2>&1 | tee "$BUILD_ARTIFACTSTAGINGDIRECTORY/frontend-parity/bundle.log"
+    displayName: Build live-mode synthetic candidate and verify types and emitted bytes
+    workingDirectory: $(Agent.TempDirectory)/foodsave-parity-$(Build.BuildId)-$(System.JobAttempt)
+    env:
+      CI: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PUBLIC_APP_MODE: live
+      NEXT_PUBLIC_API_BASE_URL: https://api.foodsave.test
+      NEXT_PUBLIC_OPERATOR_NAME: Frontend verification
+      NEXT_PUBLIC_PRIVACY_CONTACT: validation@example.test
+      NEXT_PUBLIC_RETENTION_SUMMARY: Synthetic validation fixtures only
+      NEXT_PUBLIC_PRIVACY_POLICY_COMPLETE: 'false'
+  - bash: |
+      set -euo pipefail
+      ./node_modules/.bin/playwright test --config=playwright.frontend-parity.config.ts
+    displayName: Run every tests/live spec including explorer
+    workingDirectory: $(Agent.TempDirectory)/foodsave-parity-$(Build.BuildId)-$(System.JobAttempt)
+    env:
+      CI: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+      FOODSAVE_PLAYWRIGHT_REPORT_DIR: $(Build.ArtifactStagingDirectory)/frontend-parity/browser
+  - bash: |
+      set -euo pipefail
+      test -z "$(git status --porcelain)"
+      test "$(git rev-parse HEAD)" = "$BUILD_SOURCEVERSION"
+    displayName: Verify checkout source stayed unchanged
+    condition: always()
+    workingDirectory: $(Build.SourcesDirectory)
+  - task: PublishTestResults@2
+    displayName: Publish real browser test results
+    condition: and(succeededOrFailed(), eq(variables['frontendParityPrepared'], 'true'))
+    inputs:
+      testResultsFormat: JUnit
+      searchFolder: $(Build.ArtifactStagingDirectory)/frontend-parity/browser
+      testResultsFiles: junit.xml
+      mergeTestResults: true
+      failTaskOnFailedTests: true
+      failTaskOnMissingResultsFile: true
+      testRunTitle: Frontend parity synthetic fixtures
+  - task: PublishPipelineArtifact@1
+    displayName: Preserve verification logs, traces and screenshots
+    condition: and(succeededOrFailed(), eq(variables['frontendParityPrepared'], 'true'))
+    inputs:
+      targetPath: $(Build.ArtifactStagingDirectory)/frontend-parity
+      artifact: foodsave-frontend-parity-$(Build.BuildId)
+      publishLocation: pipeline

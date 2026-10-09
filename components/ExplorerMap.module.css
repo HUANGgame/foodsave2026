@@ -1,0 +1,452 @@
+.root {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  overflow: hidden;
+  background: #e8efe6;
+  color: #203c2b;
+  font-family: inherit;
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.map:focus-visible {
+  outline: 3px solid #286b45;
+  outline-offset: -3px;
+}
+
+.root :global(.ol-viewport) {
+  touch-action: none;
+}
+
+.root :global(.ol-attribution) {
+  z-index: 60;
+  max-width: calc(100% - 12px);
+  padding: 3px 5px;
+  border-radius: 5px;
+  background: rgb(255 255 255 / 94%);
+  color: #23392b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.root :global(.ol-attribution ul) {
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  text-shadow: none;
+}
+
+.root :global(.ol-attribution a) {
+  color: #1b5639;
+}
+
+.overlay {
+  line-height: 1;
+}
+
+.portalHost {
+  position: relative;
+}
+
+.passiveOverlay,
+.passiveOverlay * {
+  pointer-events: none !important;
+}
+
+.queryOverlay {
+  z-index: 5;
+}
+
+.merchantOverlay {
+  z-index: 10;
+}
+
+.merchantOverlay:focus-within {
+  z-index: 20;
+}
+
+.frogOverlay {
+  z-index: 30;
+}
+
+.queryMarker {
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  border: 2px dashed #536858;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 65%);
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 75%);
+}
+
+.queryMarker::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #536858;
+  content: "";
+  transform: translate(-50%, -50%);
+}
+
+.storeMarker,
+.clusterMarker {
+  position: relative;
+  display: inline-flex;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 6px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  box-shadow:
+    0 2px 8px rgb(20 45 28 / 24%),
+    0 0 0 1px rgb(20 45 28 / 15%);
+  color: #fff;
+  font-family: inherit;
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.foodsaveMarker {
+  background: #3e774b;
+}
+
+.familyMarker {
+  background: #167a91;
+}
+
+.emptyMarker {
+  background: #737e75;
+}
+
+.storeMarker:hover,
+.clusterMarker:hover {
+  box-shadow:
+    0 3px 12px rgb(20 45 28 / 32%),
+    0 0 0 2px #284c35;
+}
+
+.stockBadge {
+  position: absolute;
+  top: -8px;
+  right: -9px;
+  display: grid;
+  box-sizing: border-box;
+  min-width: 23px;
+  height: 23px;
+  place-items: center;
+  padding: 0 5px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #fff3c6;
+  color: #4b3911;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.clusterMarker {
+  gap: 2px;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 8px;
+  background: #284f39;
+}
+
+.clusterUnit {
+  align-self: flex-end;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.frogBody {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  filter: drop-shadow(0 3px 4px rgb(23 53 31 / 28%));
+}
+
+.frogBody > div {
+  width: 100%;
+  height: 100%;
+}
+
+.frogBody :global(svg),
+.frogBody :global(img) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: contain;
+}
+
+.controls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.rotationControls,
+.zoomControls {
+  display: flex;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.controlButton,
+.headingButton,
+.closeButton {
+  display: inline-flex;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid #ccd8ce;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 97%);
+  box-shadow: 0 2px 7px rgb(23 47 30 / 12%);
+  color: #244c34;
+  font-family: inherit;
+  font-size: 25px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.controlButton:hover:not(:disabled),
+.headingButton:hover:not(:disabled),
+.closeButton:hover {
+  background: #edf5eb;
+}
+
+.controlButton:disabled,
+.headingButton:disabled {
+  color: #768379;
+  cursor: default;
+  opacity: 0.75;
+}
+
+.northButton {
+  position: relative;
+}
+
+.northNeedle {
+  display: block;
+  width: 24px;
+  height: 27px;
+  color: #b34839;
+  font-size: 27px;
+  line-height: 27px;
+  transform-origin: center;
+}
+
+.northLetter {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  font-size: 9px;
+}
+
+.headingButton {
+  max-width: 140px;
+  min-height: 44px;
+  padding: 9px 12px;
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: auto;
+}
+
+.headingButton[aria-pressed="true"] {
+  border-color: #315f40;
+  background: #315f40;
+  color: #fff;
+}
+
+.rotationValue {
+  min-width: 36px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 90%);
+  color: #40594a;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.tileStatus {
+  position: absolute;
+  top: 12px;
+  right: 166px;
+  left: 12px;
+  z-index: 50;
+  max-width: 340px;
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid #dcc994;
+  border-radius: 10px;
+  background: rgb(255 249 231 / 96%);
+  color: #655022;
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.clusterPanel {
+  position: absolute;
+  bottom: 32px;
+  left: 12px;
+  z-index: 55;
+  box-sizing: border-box;
+  width: min(340px, calc(100% - 24px));
+  overflow: hidden;
+  border: 1px solid #cad6cb;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 8px 30px rgb(16 39 24 / 22%);
+}
+
+.clusterHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 6px 16px;
+  border-bottom: 1px solid #e4ece4;
+}
+
+.clusterHeader h3 {
+  margin: 0;
+  color: #254c34;
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.closeButton {
+  flex-shrink: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  font-size: 25px;
+}
+
+.clusterList {
+  max-height: min(240px, 35dvh);
+  margin: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 8px 8px;
+  list-style: none;
+}
+
+.clusterList li + li {
+  border-top: 1px solid #edf1eb;
+}
+
+.storeChoice {
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: #fff;
+  color: #244532;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.storeChoice:hover {
+  background: #eef5eb;
+}
+
+.choiceName {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}
+
+.choiceStock {
+  flex-shrink: 0;
+  color: #596c5d;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.storeMarker:focus-visible,
+.clusterMarker:focus-visible,
+.controlButton:focus-visible,
+.headingButton:focus-visible,
+.closeButton:focus-visible,
+.storeChoice:focus-visible {
+  outline: 3px solid #be6c19;
+  outline-offset: 3px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 420px) {
+  .controls {
+    top: 8px;
+    right: 8px;
+    gap: 6px;
+  }
+
+  .clusterPanel {
+    left: 8px;
+    width: calc(100% - 16px);
+  }
+}
