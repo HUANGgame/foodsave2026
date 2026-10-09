@@ -1,4 +1,5 @@
 from . import welcome, nearby
+from .nearby_queries import query as nearby_query
 import hmac
 import os
 import json
@@ -317,14 +318,14 @@ class Service:
 
     def nearby_stores(self, latitude, longitude, limit=50, cursor=None):
         parameters, scope = nearby.parameters('stores', latitude, longitude, limit, cursor)
-        sql, bindings = nearby.query('stores', parameters)
+        sql, bindings = nearby_query('stores', parameters)
         with self.transaction() as c:
             items = rows(c, sql, **bindings)
         return nearby.page(items, limit, scope)
 
     def nearby_products(self, latitude, longitude, limit=50, cursor=None, store_id=None):
         parameters, scope = nearby.parameters('products', latitude, longitude, limit, cursor, store_id)
-        sql, bindings = nearby.query('products', parameters, store_id)
+        sql, bindings = nearby_query('products', parameters, store_id)
         with self.transaction() as c:
             items = rows(c, sql, **bindings)
         page = nearby.page(items, limit, scope)
