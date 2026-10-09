@@ -1,0 +1,143 @@
+# Manual dependency preparation only. No application execution or deployment.
+trigger: none
+pr: none
+pool:
+  vmImage: ubuntu-24.04
+jobs:
+- job: PrepareFrontendDependencies
+  displayName: Prepare pinned OpenLayers lockfile
+  condition: and(eq(variables['Build.Reason'], 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/foodsave-azure-checks-20261008'))
+  timeoutInMinutes: 15
+  cancelTimeoutInMinutes: 1
+  steps:
+  - checkout: self
+    clean: true
+    fetchDepth: 0
+    fetchTags: false
+    persistCredentials: false
+    submodules: false
+    lfs: false
+  - task: UseNode@1
+    inputs:
+      version: '22.x'
+    displayName: Use Node 22
+  - bash: |
+      set -euo pipefail
+      baseline=907f27d814d5c219a28e9a8dacf57a474f609f9e
+      test "$(git rev-parse HEAD)" = "$BUILD_SOURCEVERSION"
+      git merge-base --is-ancestor "$baseline" HEAD
+      test -z "$(git status --porcelain)"
+      work="$AGENT_TEMPDIRECTORY/foodsave-dependencies-$BUILD_BUILDID-$SYSTEM_JOBATTEMPT"
+      output="$BUILD_ARTIFACTSTAGINGDIRECTORY/frontend-dependencies"
+      test ! -e "$work"
+      test ! -e "$output"
+      mkdir -p "$work/input" "$work/baseline" "$work/generated" "$work/home" "$work/cache" "$output"
+      cp package.json package-lock.json "$work/input/"
+      cp package.json package-lock.json "$work/generated/"
+      git show "$baseline:package.json" > "$work/baseline/package.json"
+      git show "$baseline:package-lock.json" > "$work/baseline/package-lock.json"
+      touch "$work/user.npmrc" "$work/global.npmrc"
+      sha256sum "$work/input/package.json" "$work/input/package-lock.json"
+      export FOODSAVE_DEPENDENCY_WORK="$work"
+      node <<'NODE'
+      const fs = require('node:fs');
+      const path = require('node:path');
+      const assert = require('node:assert/strict');
+      const root = process.env.FOODSAVE_DEPENDENCY_WORK;
+      const read = (folder, file) => JSON.parse(fs.readFileSync(path.join(root, folder, file), 'utf8'));
+      const baseline = read('baseline', 'package.json');
+      const input = read('input', 'package.json');
+      const expected = structuredClone(baseline);
+      expected.dependencies.ol = '10.11.0';
+      assert.ok(input.dependencies.ol === undefined || input.dependencies.ol === '10.11.0', 'Unexpected OpenLayers version');
+      if (input.dependencies.ol === undefined) assert.deepEqual(input, baseline);
+      else assert.deepEqual(input, expected);
+      assert.equal(read('input', 'package-lock.json').lockfileVersion, read('baseline', 'package-lock.json').lockfileVersion);
+      console.log('Source copies and baseline dependency manifest verified.');
+      NODE
+      cd "$work/generated"
+      env -i PATH="$PATH" HOME="$work/home" CI=true \
+        npm_config_registry=https://registry.npmjs.org/ \
+        npm_config_userconfig="$work/user.npmrc" \
+        npm_config_globalconfig="$work/global.npmrc" \
+        npm_config_cache="$work/cache" \
+        npm install --package-lock-only --ignore-scripts --save-exact --no-audit --no-fund --registry=https://registry.npmjs.org/ ol@10.11.0
+      export FOODSAVE_DEPENDENCY_OUTPUT="$output"
+      export FOODSAVE_NPM_VERSION="$(npm --version)"
+      node <<'NODE'
+      const fs = require('node:fs');
+      const path = require('node:path');
+      const crypto = require('node:crypto');
+      const assert = require('node:assert/strict');
+      const root = process.env.FOODSAVE_DEPENDENCY_WORK;
+      const output = process.env.FOODSAVE_DEPENDENCY_OUTPUT;
+      const read = (folder, file) => JSON.parse(fs.readFileSync(path.join(root, folder, file), 'utf8'));
+      const baselinePackage = read('baseline', 'package.json');
+      const baselineLock = read('baseline', 'package-lock.json');
+      const generatedPackage = read('generated', 'package.json');
+      const generatedLock = read('generated', 'package-lock.json');
+      const expectedPackage = structuredClone(baselinePackage);
+      expectedPackage.dependencies.ol = '10.11.0';
+      assert.deepEqual(generatedPackage, expectedPackage, 'Only the pinned ol dependency may change');
+      assert.equal(generatedLock.lockfileVersion, baselineLock.lockfileVersion);
+      assert.ok(generatedLock.packages && baselineLock.packages, 'Expected package-lock packages map');
+      const expectedRoot = structuredClone(baselineLock.packages['']);
+      expectedRoot.dependencies.ol = '10.11.0';
+      assert.deepEqual(generatedLock.packages[''], expectedRoot, 'Only ol may change in the lock root');
+      let existing = 0;
+      for (const [name, original] of Object.entries(baselineLock.packages)) {
+        if (!name) continue;
+        const updated = generatedLock.packages[name];
+        assert.ok(updated, 'Existing package disappeared: '+name);
+        for (const field of ['version', 'resolved', 'integrity']) {
+          assert.equal(updated[field], original[field], 'Existing package '+field+' changed: '+name);
+        }
+        existing++;
+      }
+      assert.equal(generatedLock.packages['node_modules/ol'].version, '10.11.0');
+      for (const [name, pkg] of Object.entries(generatedLock.packages)) {
+        if (!pkg.resolved) continue;
+        const url = new URL(pkg.resolved);
+        assert.equal(url.protocol, 'https:', 'Unexpected package protocol: '+name);
+        assert.equal(url.hostname, 'registry.npmjs.org', 'Unexpected package registry: '+name);
+        assert.equal(url.username, '', 'Credentials must not appear in resolved URLs');
+        assert.equal(url.password, '', 'Credentials must not appear in resolved URLs');
+        assert.equal(url.search, '', 'Resolved URLs must not have query parameters');
+      }
+      const digest = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+      const files = {};
+      for (const file of ['package.json', 'package-lock.json']) {
+        const source = path.join(root, 'generated', file);
+        fs.copyFileSync(source, path.join(output, file), fs.constants.COPYFILE_EXCL);
+        files[file] = {sha256: digest(source), input_sha256: digest(path.join(root, 'input', file)), baseline_sha256: digest(path.join(root, 'baseline', file))};
+      }
+      const manifest = {
+        purpose: 'dependency-lockfile-preparation-only',
+        source_commit: process.env.BUILD_SOURCEVERSION,
+        baseline_commit: '907f27d814d5c219a28e9a8dacf57a474f609f9e',
+        dependency: 'ol@10.11.0',
+        registry: 'https://registry.npmjs.org/',
+        node: process.version,
+        npm: process.env.FOODSAVE_NPM_VERSION,
+        existing_packages_version_resolved_integrity_unchanged: existing,
+        lifecycle_scripts_executed: false,
+        application_tests_or_build_executed: false,
+        files
+      };
+      fs.writeFileSync(path.join(output, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', {flag: 'wx'});
+      console.log(JSON.stringify(manifest, null, 2));
+      NODE
+      cd "$BUILD_SOURCESDIRECTORY"
+      cmp package.json "$work/input/package.json"
+      cmp package-lock.json "$work/input/package-lock.json"
+      test -z "$(git status --porcelain)"
+    displayName: Generate isolated lockfile and verify unchanged existing dependencies
+    workingDirectory: $(Build.SourcesDirectory)
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+  - task: PublishPipelineArtifact@1
+    displayName: Preserve package manifests and SHA256 evidence
+    inputs:
+      targetPath: '$(Build.ArtifactStagingDirectory)/frontend-dependencies'
+      artifact: 'foodsave-frontend-dependencies-$(Build.BuildId)'
+      publishLocation: pipeline
