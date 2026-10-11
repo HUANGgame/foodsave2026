@@ -1,0 +1,286 @@
+# Manual observation of one clean anonymous public homepage; not a release/deployment job.
+trigger: none
+pr: none
+pool:
+  vmImage: ubuntu-24.04
+jobs:
+- job: ObservePublicPwa
+  condition: and(eq(variables['Build.Reason'], 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/foodsave-azure-checks-20261008'))
+  timeoutInMinutes: 15
+  steps:
+  - checkout: self
+    clean: true
+    fetchDepth: 0
+    fetchTags: false
+    persistCredentials: false
+  - task: UseNode@1
+    inputs:
+      version: '22.x'
+  - bash: |
+      set -euo pipefail
+      test "$TF_BUILD" = True
+      test "$BUILD_REASON" = Manual
+      test "$(git rev-parse HEAD)" = "$BUILD_SOURCEVERSION"
+      test -z "$(git status --porcelain)"
+      git merge-base --is-ancestor 90d80f8d0fb199b8d63eaa4be303dbc1f4281b09 HEAD
+      test "$(git diff --name-status 90d80f8d0fb199b8d63eaa4be303dbc1f4281b09 HEAD)" = $'A\tazure-pipelines-public-pwa-readonly-20261011.yml'
+      work="$AGENT_TEMPDIRECTORY/foodsave-public-pwa-$BUILD_BUILDID-$SYSTEM_JOBATTEMPT"
+      report="$BUILD_ARTIFACTSTAGINGDIRECTORY/public-pwa"
+      test ! -e "$work"
+      test ! -e "$report"
+      mkdir -p "$work" "$report"
+      git archive --format=tar HEAD package.json package-lock.json > "$report/dependency-input-backup.tar"
+      tar -xf "$report/dependency-input-backup.tar" -C "$work"
+      cmp package.json "$work/package.json"
+      cmp package-lock.json "$work/package-lock.json"
+      sha256sum package.json package-lock.json "$report/dependency-input-backup.tar" > "$report/input-sha256.txt"
+      printf '%s\n' "$BUILD_SOURCEVERSION" > "$report/source-commit.txt"
+      echo '##vso[task.setvariable variable=publicPwaPrepared]true'
+    displayName: Verify additive-only source and copy backed-up dependency inputs
+  - bash: |
+      set -euo pipefail
+      npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/
+      ./node_modules/.bin/playwright install --with-deps chromium
+      node --version
+      ./node_modules/.bin/playwright --version
+    workingDirectory: $(Agent.TempDirectory)/foodsave-public-pwa-$(Build.BuildId)-$(System.JobAttempt)
+    displayName: Prepare locked Chromium observer without building the app
+    env:
+      CI: 'true'
+  - bash: |
+      set -euo pipefail
+      test ! -e public-pwa-readonly.cjs
+      cat > public-pwa-readonly.cjs <<'NODE'
+      'use strict';
+      const fs = require('node:fs');
+      const path = require('node:path');
+      const http = require('node:http');
+      const https = require('node:https');
+      const net = require('node:net');
+      const {createHash} = require('node:crypto');
+      const {chromium} = require('@playwright/test');
+      const ORIGIN = 'https://green-forest-0665cda00.5.azurestaticapps.net';
+      const HOST = new URL(ORIGIN).hostname;
+      const reportDir = process.env.PWA_REPORT_DIR;
+      if (!reportDir || !fs.statSync(reportDir).isDirectory()) throw new Error('Prepared report directory required');
+      const evidence = {
+        scope: 'One clean anonymous homepage load. No login, user gesture, installation, permission grant or explicit worker/cache mutation.',
+        limitations: [
+          'This profile does not contain previous visitors registrations or caches.',
+          'Blocked API or other requests may affect application startup; absence of registration is only this observation.',
+          'Only loaded public scripts are examined; no claim about unloaded chunks, deep routes, or complete legacy archives.',
+          'The page may register a worker during its own normal startup; this observer never invokes register/update/unregister.'
+        ],
+        blockedRequests: [], proxyDeniedHosts: [], responses: [], scripts: [], snapshots: []
+      };
+      const safeUrl = value => {const u = new URL(value); return u.origin + u.pathname;};
+      const safeHeaders = headers => Object.fromEntries(
+        ['content-type', 'content-length', 'cache-control', 'etag', 'last-modified', 'service-worker-allowed', 'content-security-policy']
+          .filter(name => typeof headers[name] === 'string').map(name => [name, headers[name]]));
+      const save = () => fs.writeFileSync(path.join(reportDir, 'public-pwa-observation.json'), JSON.stringify(evidence, (_key, value) => {
+        if (typeof value !== 'string') return value;
+        return value.replace(/https?:\/\/[^\s"'<>\\)]+/g, text => {
+          try {return safeUrl(text);} catch {return '[unparseable URL]';}
+        }).replace(/([?&](?:token|access_token|id_token|sig|signature|code|key|client_secret)=)[^&\s"'<>]+/gi, '$1[redacted]');
+      }, 2) + '\n');
+      let denial = null;
+      let requestFailure = null;
+      const noteDenial = (url, status) => {if (status === 401 || status === 403) denial = 'Public resource access denied: ' + status + ' ' + safeUrl(url);};
+      const permitted = value => {
+        let u, pathname;
+        try {
+          u = new URL(value);
+          if (u.origin !== ORIGIN || u.username || u.password) return false;
+          pathname = decodeURIComponent(u.pathname).replace(/\\/g, '/').replace(/\/+/g, '/');
+        } catch {return false;}
+        // Reject ambiguous encodings and traversal rather than asking the server to interpret them.
+        if (/[%\u0000-\u001f\u007f;]/.test(pathname) || pathname.split('/').some(part => part === '.' || part === '..')) return false;
+        return !/^\/(?:api|\.auth|auth|me|nearby|stores|products|favorites|reservations|notifications|vendor|account|draws|demo-draws|admin)(?:\/|$)/i.test(pathname);
+      };
+      const proxySockets = new Set();
+      const proxy = http.createServer((_req, res) => {res.writeHead(403);res.end();});
+      proxy.on('connect', (req, client, head) => {
+        if (req.url !== HOST + ':443') {
+          let host = '[unparseable target]';
+          try {host = new URL('https://' + String(req.url || '')).hostname;} catch {}
+          evidence.proxyDeniedHosts.push(host);
+          client.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return;
+        }
+        const upstream = net.connect(443, HOST, () => {
+          client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+          if (head.length) upstream.write(head);
+          client.pipe(upstream); upstream.pipe(client);
+        });
+        for (const socket of [client, upstream]) {
+          proxySockets.add(socket); socket.on('close', () => proxySockets.delete(socket));
+          socket.on('error', () => {client.destroy(); upstream.destroy();});
+        }
+        client.on('close', () => upstream.destroy()); upstream.on('close', () => client.destroy());
+      });
+      proxy.on('clientError', (_error, socket) => socket.end('HTTP/1.1 400 Bad Request\r\n\r\n'));
+      async function publicGet(url) {
+        if (!permitted(url)) throw new Error('Declared public URL is outside the allowed origin/path');
+        return new Promise((resolve, reject) => {
+          const req = https.get(url, {headers: {'User-Agent': 'FoodSave-PWA-readonly-validation', Accept: 'application/manifest+json,application/json,text/plain'}}, res => {
+            const status = res.statusCode || 0;
+            noteDenial(url, status);
+            if (status === 401 || status === 403) {
+              evidence.manifestAccessDenied = {url: safeUrl(url), status, headers: safeHeaders(res.headers)};
+              res.destroy(); reject(new Error(denial)); return;
+            }
+            if (status >= 300 && status < 400) {
+              res.destroy();
+              resolve({url: safeUrl(url), status, headers: safeHeaders(res.headers), body: Buffer.alloc(0), bodySkipped: 'redirect-not-followed'}); return;
+            }
+            const chunks = [];let length = 0;
+            res.on('data', chunk => {length += chunk.length;if (length > 128 * 1024) req.destroy(new Error('Public manifest exceeds 128 KiB'));else chunks.push(chunk);});
+            res.on('end', () => resolve({url: safeUrl(url), status, headers: safeHeaders(res.headers), body: Buffer.concat(chunks)}));
+            res.on('error', reject);
+          });
+          req.setTimeout(15000, () => req.destroy(new Error('Public manifest request timed out')));
+          req.on('error', reject);
+        });
+      }
+      (async () => {
+        let browser;
+        const pending = [];
+        let scriptBytes = 0;
+        try {
+          await new Promise(resolve => proxy.listen(0, '127.0.0.1', resolve));
+          browser = await chromium.launch({
+            channel: 'chromium', headless: true,
+            proxy: {server: 'http://127.0.0.1:' + proxy.address().port},
+            env: {PATH: process.env.PATH || '/usr/bin:/bin', HOME: process.cwd(), LANG: 'C.UTF-8'},
+          });
+          const context = await browser.newContext({serviceWorkers: 'allow', acceptDownloads: false, permissions: []});
+          await context.route('**/*', async route => {
+            const req = route.request();
+            try {
+            if (denial || requestFailure || !['GET', 'HEAD'].includes(req.method()) || !permitted(req.url())) {
+              evidence.blockedRequests.push({method: req.method(), resourceType: req.resourceType(), url: safeUrl(req.url()), reason: denial || requestFailure ? 'stop-after-request-error' : 'readonly-origin-or-path-policy'});
+              return route.abort('blockedbyclient');
+            }
+            const response = await route.fetch({maxRedirects: 0, timeout: 20000});
+            noteDenial(req.url(), response.status());
+            if (denial || requestFailure || (response.status() >= 300 && response.status() < 400)) {
+              evidence.responses.push({url: safeUrl(req.url()), status: response.status(), resourceType: req.resourceType(), headers: safeHeaders(response.headers()), notFollowed: true});
+              evidence.blockedRequests.push({method: req.method(), resourceType: req.resourceType(), url: safeUrl(req.url()), reason: denial ? 'public-access-denial' : 'redirect-not-followed'});
+              await response.dispose();
+              return route.abort('blockedbyclient');
+            }
+            await route.fulfill({response});
+            await response.dispose();
+            } catch (error) {
+              requestFailure = 'Public request transport failed: ' + safeUrl(req.url());
+              evidence.requestFailures = evidence.requestFailures || [];
+              evidence.requestFailures.push({url: safeUrl(req.url()), error: error.message});
+              await route.abort('failed').catch(() => {});
+            }
+          });
+          await context.routeWebSocket('**/*', socket => {
+            evidence.blockedRequests.push({method: 'WS', resourceType: 'websocket', url: safeUrl(socket.url()), reason: 'readonly-no-websocket'});
+            socket.close({code: 1008, reason: 'Read-only observation'});
+          });
+          context.on('response', response => {
+            const request = response.request();
+            const url = response.url();
+            if (new URL(url).origin !== ORIGIN) return;
+            noteDenial(url, response.status());
+            evidence.responses.push({url: safeUrl(url), status: response.status(), resourceType: request.resourceType(), headers: safeHeaders(response.headers())});
+            if (request.resourceType() !== 'script' || !permitted(url) || !/\.m?js$/i.test(new URL(url).pathname) || pending.length >= 60) return;
+            const length = Number(response.headers()['content-length'] || 0);
+            if (length > 2 * 1024 * 1024) {evidence.scripts.push({url: safeUrl(url), omitted: 'size limit'});return;}
+            pending.push((async () => {
+              const bytes = await response.body();
+              scriptBytes += bytes.length;
+              if (bytes.length > 2 * 1024 * 1024 || scriptBytes > 8 * 1024 * 1024) {
+                evidence.scripts.push({url: safeUrl(url), omitted: 'per-script or total size limit'}); return;
+              }
+              const text = bytes.toString('utf8');
+              const snippets = [];
+              const expression = /serviceWorker|registerSW|workbox|(?:\/sw\.js)/g;
+              for (const match of text.matchAll(expression)) {
+                if (snippets.length >= 12) break;
+                snippets.push(text.slice(Math.max(0, match.index - 140), match.index + 200));
+              }
+              evidence.scripts.push({url: safeUrl(url), status: response.status(), contentType: response.headers()['content-type'] || '', bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), workerRelatedSnippets: snippets});
+            })().catch(error => evidence.scripts.push({url: safeUrl(url), readError: error.message})));
+          });
+          const page = await context.newPage();
+          const main = await page.goto(ORIGIN + '/', {waitUntil: 'domcontentloaded', timeout: 25000});
+          if (!main) throw new Error('No homepage response');
+          if (denial || requestFailure) throw new Error(denial || requestFailure);
+          if (main.status() >= 400) throw new Error('Homepage HTTP ' + main.status());
+          await page.waitForLoadState('load', {timeout: 15000});
+          for (const delay of [1000, 3000]) {
+            await page.waitForTimeout(delay);
+            if (denial || requestFailure) throw new Error(denial || requestFailure);
+            evidence.snapshots.push(await page.evaluate(async () => ({
+              capturedAt: new Date().toISOString(), readyState: document.readyState, secureContext: window.isSecureContext,
+              manifestLinks: [...document.querySelectorAll('link[rel~="manifest"]')].map(el => ({href: el.href, crossOrigin: el.crossOrigin})),
+              scriptSources: [...document.scripts].filter(el => el.src).map(el => new URL(el.src).origin + new URL(el.src).pathname),
+              controller: navigator.serviceWorker?.controller ? {scriptURL: navigator.serviceWorker.controller.scriptURL, state: navigator.serviceWorker.controller.state} : null,
+              registrations: 'serviceWorker' in navigator ? (await navigator.serviceWorker.getRegistrations()).map(registration => ({
+                scope: registration.scope, updateViaCache: registration.updateViaCache,
+                active: registration.active ? {scriptURL: registration.active.scriptURL, state: registration.active.state} : null,
+                waiting: registration.waiting ? {scriptURL: registration.waiting.scriptURL, state: registration.waiting.state} : null,
+                installing: registration.installing ? {scriptURL: registration.installing.scriptURL, state: registration.installing.state} : null,
+              })) : [],
+              cacheNames: 'caches' in window ? await caches.keys() : [],
+            })));
+          }
+          const last = evidence.snapshots[evidence.snapshots.length - 1];
+          const declared = [...new Set(last.manifestLinks.map(link => link.href))];
+          evidence.manifests = [];
+          for (const url of declared.slice(0, 2)) {
+            if (!permitted(url)) {evidence.manifests.push({url: safeUrl(url), omitted: 'not an allowed public URL'});continue;}
+            const result = await publicGet(url);
+            if (denial || requestFailure) throw new Error(denial || requestFailure);
+            const {body, ...metadata} = result;
+            let parsed = null;
+            try {parsed = JSON.parse(body.toString('utf8'));} catch {}
+            evidence.manifests.push({...metadata, bytes: body.length, sha256: createHash('sha256').update(body).digest('hex'),
+              parsed: parsed && {id: parsed.id, name: parsed.name, short_name: parsed.short_name, start_url: parsed.start_url, scope: parsed.scope, display: parsed.display, icons: parsed.icons},
+              parseableJson: parsed !== null});
+          }
+          await Promise.all(pending);
+          if (denial || requestFailure) throw new Error(denial || requestFailure);
+          evidence.completed = true;
+          evidence.observation = last.registrations.length ? 'Registration observed in this fresh homepage session; inspect exact scriptURL/scope.' : 'No registration observed in this fresh homepage session; not a statement about historical visitors.';
+          console.log(evidence.observation);
+          console.log('Manifest declarations:', declared.length, 'loaded scripts examined:', evidence.scripts.length, 'blocked page requests:', evidence.blockedRequests.length);
+        } catch (error) {
+          evidence.completed = false; evidence.error = denial || error.message;process.exitCode = 1;
+          console.error('Public PWA observation stopped; see sanitized artifact evidence.');
+        } finally {
+          await Promise.allSettled(pending);
+          if (browser) await browser.close().catch(() => {});
+          for (const socket of proxySockets) socket.destroy();
+          await new Promise(resolve => proxy.close(resolve));
+          if (denial || requestFailure) {
+            evidence.completed = false; evidence.error = denial || requestFailure; process.exitCode = 1;
+          }
+          save();
+        }
+      })().catch(error => {evidence.completed=false;evidence.error=error.message;save();console.error('Public PWA observer failed; see sanitized artifact evidence.');process.exitCode=1;});
+      NODE
+      node --check public-pwa-readonly.cjs
+      node public-pwa-readonly.cjs
+    workingDirectory: $(Agent.TempDirectory)/foodsave-public-pwa-$(Build.BuildId)-$(System.JobAttempt)
+    displayName: Observe only the public homepage, manifest and existing worker state
+    env:
+      PWA_REPORT_DIR: $(Build.ArtifactStagingDirectory)/public-pwa
+      PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS: 'true'
+  - bash: |
+      set -euo pipefail
+      test -z "$(git status --porcelain)"
+      test "$(git rev-parse HEAD)" = "$BUILD_SOURCEVERSION"
+    condition: always()
+    displayName: Verify repository source stayed unchanged
+  - task: PublishPipelineArtifact@1
+    condition: and(succeededOrFailed(), eq(variables['publicPwaPrepared'], 'true'))
+    inputs:
+      targetPath: $(Build.ArtifactStagingDirectory)/public-pwa
+      artifact: foodsave-public-pwa-$(Build.BuildId)
+      publishLocation: pipeline
+    displayName: Preserve bounded public observation evidence
