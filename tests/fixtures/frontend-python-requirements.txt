@@ -1,0 +1,5 @@
+# Minimal imports for backend/qa/demo_prize_fixture.py; versions match backend/requirements.txt.
+# No ODBC driver, Azure SDK or production database connection is required.
+fastapi==0.141.1
+uvicorn==0.52.1
+SQLAlchemy==2.0.43
