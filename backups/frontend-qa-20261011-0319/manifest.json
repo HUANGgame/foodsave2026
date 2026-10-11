@@ -1,0 +1,12 @@
+{
+  "purpose": "Original favorites browser test before approved frontend QA correction",
+  "source_commit": "fdc924ca0ce65d2c3e33fb1debaa1254b1070b90",
+  "created_utc": "2026-10-11T03:19:00Z",
+  "files": [
+    {
+      "source": "tests/live/events.spec.ts",
+      "backup": "backups/frontend-qa-20261011-0319/events.spec.ts",
+      "git_blob_sha": "1d8d12a34e876bca9a7194899a4cab4aa2806eac"
+    }
+  ]
+}
