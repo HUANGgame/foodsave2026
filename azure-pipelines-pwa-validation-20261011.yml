@@ -1,0 +1,164 @@
+# Supplemental PWA eligibility and same-version update-policy verification.
+# Full Chromium, disposable profiles and a read-only loopback fixture only.
+# This does not install an app or prove compatibility with an unknown production worker.
+trigger: none
+pr: none
+pool:
+  vmImage: ubuntu-24.04
+jobs:
+- job: VerifyPwaEligibilityAndUpdate
+  displayName: Verify PWA eligibility and controlled update lifecycle
+  condition: and(eq(variables['Build.Reason'], 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/foodsave-azure-checks-20261008'))
+  timeoutInMinutes: 35
+  cancelTimeoutInMinutes: 2
+  steps:
+  - checkout: self
+    clean: true
+    fetchDepth: 0
+    fetchTags: false
+    persistCredentials: false
+    submodules: false
+    lfs: false
+  - task: UseNode@1
+    inputs:
+      version: '22.x'
+    displayName: Use Node 22
+  - bash: |
+      set -euo pipefail
+      test "$TF_BUILD" = True
+      test "$BUILD_REASON" = Manual
+      test "$(git rev-parse HEAD)" = "$BUILD_SOURCEVERSION"
+      git merge-base --is-ancestor 6e1f360d16d0878adac5ba87b3c5745f09c84d6e HEAD
+      test -z "$(git status --porcelain)"
+      python3 - <<'PY'
+      import subprocess
+      actual = subprocess.check_output(['git', 'diff', '--name-status',
+          '6e1f360d16d0878adac5ba87b3c5745f09c84d6e', 'HEAD'], text=True).splitlines()
+      paths = [
+          'azure-pipelines-pwa-validation-20261011.yml',
+          'playwright.pwa.config.ts',
+          'scripts/pwa-validation-server.cjs',
+          'tests/pwa/installability.spec.ts',
+          'tests/pwa/update-lifecycle.spec.ts',
+      ]
+      expected = {'A\t' + path for path in paths}
+      if set(actual) != expected or len(actual) != len(expected):
+          raise SystemExit('Source scope differs from the five approved additions')
+      print('Verified additive-only source scope:', len(actual), 'new files')
+      PY
+      work="$AGENT_TEMPDIRECTORY/foodsave-pwa-$BUILD_BUILDID-$SYSTEM_JOBATTEMPT"
+      backup="$AGENT_TEMPDIRECTORY/foodsave-pwa-$BUILD_BUILDID-$SYSTEM_JOBATTEMPT-source.tar"
+      report="$BUILD_ARTIFACTSTAGINGDIRECTORY/pwa-validation"
+      test ! -e "$work"
+      test ! -e "$backup"
+      test ! -e "$report"
+      mkdir -p "$work" "$report"
+      git archive --format=tar --output="$backup" HEAD
+      tar -xf "$backup" -C "$work"
+      python3 - "$backup" "$work" <<'PY'
+      import pathlib, sys, tarfile
+      archive_path, root = map(pathlib.Path, sys.argv[1:])
+      checked = 0
+      with tarfile.open(archive_path) as archive:
+          for member in archive.getmembers():
+              if member.isdir():
+                  continue
+              if not member.isfile():
+                  raise SystemExit('Unexpected non-regular source entry')
+              rel = pathlib.PurePosixPath(member.name)
+              if rel.is_absolute() or '..' in rel.parts:
+                  raise SystemExit('Unsafe source archive path')
+              if archive.extractfile(member).read() != (root / member.name).read_bytes():
+                  raise SystemExit('Source copy differs from source backup')
+              checked += 1
+      if not checked:
+          raise SystemExit('Empty source archive')
+      print('Verified source-copy files:', checked)
+      PY
+      test -f "$work/tests/pwa/installability.spec.ts"
+      test -f "$work/tests/pwa/update-lifecycle.spec.ts"
+      test -f "$work/scripts/pwa-validation-server.cjs"
+      test -f "$work/playwright.pwa.config.ts"
+      printf '%s\n' "$BUILD_SOURCEVERSION" > "$report/source-commit.txt"
+      sha256sum "$backup" > "$report/source-backup-sha256.txt"
+      printf '%s\n' \
+        'Supplemental PWA verification on a loopback synthetic build only.' \
+        'No deployment, SQL, service connection, live authentication or production secret is used.' \
+        'npm run build:release is not run: its production hostname gate rejects api.foodsave.test.' \
+        'Eligibility is checked without installing an app or granting browser permissions.' \
+        'The update test covers this candidate worker only, not unknown legacy 0.4.10/0.4.11 workers.' \
+        'A successful run is not production release acceptance.' > "$report/scope.txt"
+      echo '##vso[task.setvariable variable=pwaValidationPrepared]true'
+    displayName: Verify revision and prepare isolated source copy with backup
+    workingDirectory: $(Build.SourcesDirectory)
+  - bash: |
+      set -euo pipefail
+      npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/
+      ./node_modules/.bin/playwright install --with-deps chromium
+      node --check scripts/pwa-validation-server.cjs
+      node --version
+      npm --version
+      ./node_modules/.bin/playwright --version
+    displayName: Install locked dependencies and matching Chromium
+    workingDirectory: $(Agent.TempDirectory)/foodsave-pwa-$(Build.BuildId)-$(System.JobAttempt)
+    env:
+      CI: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+  - bash: |
+      set -euo pipefail
+      npm test 2>&1 | tee "$BUILD_ARTIFACTSTAGINGDIRECTORY/pwa-validation/unit.log"
+    displayName: Run all frontend unit tests
+    workingDirectory: $(Agent.TempDirectory)/foodsave-pwa-$(Build.BuildId)-$(System.JobAttempt)
+    env:
+      CI: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+  - bash: |
+      set -euo pipefail
+      npm run build 2>&1 | tee "$BUILD_ARTIFACTSTAGINGDIRECTORY/pwa-validation/build.log"
+      ./node_modules/.bin/tsc --noEmit --incremental false 2>&1 | tee "$BUILD_ARTIFACTSTAGINGDIRECTORY/pwa-validation/types.log"
+      node scripts/check-live-bundle.cjs out https://api.foodsave.test 2>&1 | tee "$BUILD_ARTIFACTSTAGINGDIRECTORY/pwa-validation/bundle.log"
+    displayName: Build live-mode synthetic candidate and verify types and emitted bytes
+    workingDirectory: $(Agent.TempDirectory)/foodsave-pwa-$(Build.BuildId)-$(System.JobAttempt)
+    env:
+      CI: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PUBLIC_APP_MODE: live
+      NEXT_PUBLIC_API_BASE_URL: https://api.foodsave.test
+      NEXT_PUBLIC_OPERATOR_NAME: Frontend verification
+      NEXT_PUBLIC_PRIVACY_CONTACT: validation@example.test
+      NEXT_PUBLIC_RETENTION_SUMMARY: Synthetic validation fixtures only
+      NEXT_PUBLIC_PRIVACY_POLICY_COMPLETE: 'false'
+  - bash: |
+      set -euo pipefail
+      ./node_modules/.bin/playwright test --config=playwright.pwa.config.ts
+    displayName: Run PWA eligibility negative control and controlled update checks
+    workingDirectory: $(Agent.TempDirectory)/foodsave-pwa-$(Build.BuildId)-$(System.JobAttempt)
+    env:
+      CI: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+      FOODSAVE_PWA_REPORT_DIR: $(Build.ArtifactStagingDirectory)/pwa-validation/browser
+  - bash: |
+      set -euo pipefail
+      test -z "$(git status --porcelain)"
+      test "$(git rev-parse HEAD)" = "$BUILD_SOURCEVERSION"
+    displayName: Verify checkout source stayed unchanged
+    condition: always()
+    workingDirectory: $(Build.SourcesDirectory)
+  - task: PublishTestResults@2
+    displayName: Publish real browser test results
+    condition: and(succeededOrFailed(), eq(variables['pwaValidationPrepared'], 'true'))
+    inputs:
+      testResultsFormat: JUnit
+      searchFolder: $(Build.ArtifactStagingDirectory)/pwa-validation/browser
+      testResultsFiles: junit.xml
+      mergeTestResults: true
+      failTaskOnFailedTests: true
+      failTaskOnMissingResultsFile: true
+      testRunTitle: PWA eligibility and controlled update synthetic fixtures
+  - task: PublishPipelineArtifact@1
+    displayName: Preserve verification logs, traces and screenshots
+    condition: and(succeededOrFailed(), eq(variables['pwaValidationPrepared'], 'true'))
+    inputs:
+      targetPath: $(Build.ArtifactStagingDirectory)/pwa-validation
+      artifact: foodsave-pwa-validation-$(Build.BuildId)
+      publishLocation: pipeline
